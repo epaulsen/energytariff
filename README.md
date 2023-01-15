@@ -137,7 +137,7 @@ Etter å ha lagt til oppsettet så må HomeAssistant restartes for at sensorene 
 Dersom alt er riktig, gjort, så skal  man få opp sensorer som ligner på dette:
 
 
-![Example][sensor_example.png]
+![Example](./sensor_example.png)
 
 
 
