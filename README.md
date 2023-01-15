@@ -13,44 +13,39 @@ Integrasjonen oppretter følgende sensorer:
   Dette er en enkel rienmann left sum basert på input sensor, som nullstiller seg for hver klokketime.
   Sensoren angir forbruk i kWh for denne timen.
 
-
-
 **Energy estimate this hour**
 
   Estimert forbruk denne timen.  Estimatet regnes ut etter formelen (Energi Brukt) + (MomentanEffekt * Antall sekunder igjen i time)
-  Eksempel: 8 kWh brukt i løpet av de første 45 minuttene av timen.  5000 W momentaneffekt.  15 minutter er 900 sekund
+  Eksempel: 
+  
+```
+  8 kWh brukt i løpet av de første 45 minuttene av timen.  5000 W momentaneffekt.  15 minutter er 900 sekund
   8 + (5000 * 900 / 3600 / 1000) = 9,25 kWh i estimat for timen.
+```
+
   Sensoren angir data i kWh.
-
-
 
 **Grid effect level**
 
   Angir øvre terskelverdi basert på tre høyeste timer målt denne måneden, fra tre ulike dager.
   Sensoren angir data i kWh.  Eksempel: Dersom du befinner deg på effekt-trinn 5-10 kWh, så vil sensoren angi 10kWh
-  **NB!** Før sensoren har tre dager ulike dager med data, så vil verdien ikke bli riktig
-
-
 
 **Grid effect level name**
 
   Navn på effekt-trinn hentet fra konfigurasjonen.
+  
   **NB!** Før sensoren har tre dager ulike dager med data, så vil verdien ikke bli riktig.
 
 
 **Grid effect level price**
 
   Pris på nåværende effekt-trinn.  Angis i NOK
-  **NB!** Før sensoren har tre dager ulike dager med data, så vil verdien ikke bli riktig.
 
 
 **Average peak hour effect**
 
   Snittet på de tre høyeste timer fra tre forskjellige dager målt denne måneden.
-  **NB!** Før sensoren har tre dager ulike dager med data, så vil verdien ikke bli riktig.
-
-
-
+  
 **Available effect**
 
   Angir maks momentaneffekt man kan bruke resten av timen og holde seg innenfor det effekt-trinnet man er på.
@@ -62,10 +57,17 @@ Integrasjonen oppretter følgende sensorer:
     Effekttrinn 5-10 kWh, 8 kWh brukt de første 45 minutt av timen, momentaneffekt 5kW
     Sensoren vil da regne ut hvor mange watt man kan trekke de siste 15 minutt(900 sekunder) av timen, minus
     den momentaneffekten man allerede bruker.
+    
     (10000 - 8000) * 1000 * 3600 / 900 - 5000 = 3000
 
     Sensoren vil angi at man resten av timen har 3000W effekt tilgjengelig i tillegg til det man allerede bruker.
 ```
+
+### **NB!** Sensorene som er avhengig av effekt-trinn hos netteier baserer seg på utregning av snittet av tre høyeste timer på tre unike dager.
+Inntil man som et minimum har tre dager med forbruksdata, så vil ikke sensorene vise riktig verdi her.  
+Dag 1 så vil man kun registrere høyeste time, og snittet vil være identisk med timen med høyest forbruk.
+Dag 2 så vil man beregne snittet ut fra høyeste time dag 1 og dag 2.
+Dag 3 så vil snittet bli rett, snittet beregnes da ut fra forbruk de tre høyeste timer.
 
 ## Installasjon
 
