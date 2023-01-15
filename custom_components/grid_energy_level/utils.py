@@ -1,10 +1,12 @@
 from datetime import datetime, timedelta
 from typing import Any
-from .const import ROUNDING_PRECISION
 
-# from typing import Any, Callable, Optional
-# import voluptuous as vol
-# from homeassistant.util import dt
+from homeassistant.const import (
+    STATE_UNAVAILABLE,
+    STATE_UNKNOWN,
+)
+
+from .const import ROUNDING_PRECISION
 
 
 def start_of_current_hour(date_object: datetime) -> datetime:
@@ -40,18 +42,21 @@ def seconds_between(date_object_1: datetime, date_object_2: datetime) -> int:
     return (date_object_1 - date_object_2).total_seconds()
 
 
-def get_rounding_precision(config: dict[str, Any]) -> float:
+def get_rounding_precision(config: dict[str, Any]) -> int:
     """Gets rounding precision for sensors with decimal value.
     Default to the value 2 for 2 decimals"""
     precision = config.get(ROUNDING_PRECISION)
     if precision is None:
         return 2
 
-    return float(precision)
+    return int(precision)
 
 
 def convert_to_watt(data: any) -> float:
     """Converts input sensor data to watt, if needed"""
+    if data.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+        return 0
+
     value = float(data.state)
     unit = data.attributes["unit_of_measurement"]
     if unit == "kW":

@@ -134,7 +134,9 @@ class GridCapWatcherEnergySensor(RestoreSensor):
             new_updated = event.data["new_state"].last_updated
             new_value = convert_to_watt(event.data["new_state"])
 
-            if event.data["old_state"] is not None:
+            if event.data["old_state"] is not None and event.data[
+                "old_state"
+            ].state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 old_value = convert_to_watt(event.data["old_state"])
                 old_updated = event.data["old_state"].last_updated
 
@@ -652,7 +654,6 @@ class GridCapacityWatcherCurrentLevelName(RestoreSensor):
     the remainin part of current hour"""
 
     _state_class = SensorStateClass.MEASUREMENT
-    _attr_native_unit_of_measurement = UnitOfPower.WATT
 
     def __init__(self, hass, config, rx_coord: GridCapacityCoordinator):
         self._coordinator = rx_coord
