@@ -1,6 +1,6 @@
 # Grid energy level tariff monitor
 
-To English HA Users: As this integration only is relevent to Norwegian HA users, documentation is only available in norwegian for now.  Sorry!
+To English HA Users: As this integration only is relevent for Norwegian HA users, documentation is only available in norwegian for now.  Sorry!
 
 
 ## Beskrivelse
@@ -8,10 +8,12 @@ Denne integrasjonen setter opp en platform-entitet for å holde øye med effekt-
 
 Integrasjonen oppretter følgende sensorer:
 
+## Generelle sensorer:
+
 **Energy Used**
 
-  Dette er en enkel rienmann left sum basert på input sensor, som nullstiller seg for hver klokketime.
-  Sensoren angir forbruk i kWh for denne timen.
+  Dette er en enkel rienmann left sum basert på input sensor, som nullstiller seg for hver klokketime.  
+  Input sensor i configuration.yaml må enten måle i W eller kW.  Sensoren angir forbruk i kWh for inneværende time.
 
 **Energy estimate this hour**
 
@@ -19,11 +21,21 @@ Integrasjonen oppretter følgende sensorer:
   Eksempel: 
   
 ```
-  8 kWh brukt i løpet av de første 45 minuttene av timen.  5000 W momentaneffekt.  15 minutter er 900 sekund
+  8 kWh brukt i løpet av de første 45 minuttene av timen.  
+  5000 W momentaneffekt.  
+  15 minutter er 900 sekund
+  
   8 + (5000 * 900 / 3600 / 1000) = 9,25 kWh i estimat for timen.
 ```
 
   Sensoren angir data i kWh.
+  
+## Effekt-trinn sensorer:
+**NB!** Disse sensorene baserer seg på at effekt-trinn regnes ut av snittet for de tre timene med høyest forbruk på tre forskjellige dager.
+Inntil man har starter på dag 3 så vil nødvendigvis ikke disse sensorene gi riktige data.  
+For dag en så vil effekt-trinn sensorene vises basert på høyeste time kun på dag 1.
+For dag to så vil effekt-trinn sensorene vises for snittet av dag 1 og 2.  
+Fra og med første time på dag 3 så vil sensorene vise riktig verdi.
 
 **Grid effect level**
 
@@ -34,7 +46,6 @@ Integrasjonen oppretter følgende sensorer:
 
   Navn på effekt-trinn hentet fra konfigurasjonen.
   
-  **NB!** Før sensoren har tre dager ulike dager med data, så vil verdien ikke bli riktig.
 
 
 **Grid effect level price**
@@ -54,7 +65,9 @@ Integrasjonen oppretter følgende sensorer:
   Eksempel:
 
 ```
-    Effekttrinn 5-10 kWh, 8 kWh brukt de første 45 minutt av timen, momentaneffekt 5kW
+    Effekttrinn 5-10 kWh.
+    8 kWh brukt de første 45 minutt av timen.
+    Momentaneffekt 5kW
     Sensoren vil da regne ut hvor mange watt man kan trekke de siste 15 minutt(900 sekunder) av timen, minus
     den momentaneffekten man allerede bruker.
     
@@ -62,12 +75,6 @@ Integrasjonen oppretter følgende sensorer:
 
     Sensoren vil angi at man resten av timen har 3000W effekt tilgjengelig i tillegg til det man allerede bruker.
 ```
-
-### **NB!** Sensorene som er avhengig av effekt-trinn hos netteier baserer seg på utregning av snittet av tre høyeste timer på tre unike dager.
-Inntil man som et minimum har tre dager med forbruksdata, så vil ikke sensorene vise riktig verdi her.  
-Dag 1 så vil man kun registrere høyeste time, og snittet vil være identisk med timen med høyest forbruk.
-Dag 2 så vil man beregne snittet ut fra høyeste time dag 1 og dag 2.
-Dag 3 så vil snittet bli rett, snittet beregnes da ut fra forbruk de tre høyeste timer.
 
 ## Installasjon
 
