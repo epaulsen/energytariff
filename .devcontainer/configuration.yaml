@@ -1,0 +1,18 @@
+default_config:
+
+logger:
+  default: info
+  logs:
+    custom_components.grid_energy_level: debug
+# If you need to debug uncommment the line below (doc: https://www.home-assistant.io/integrations/debugpy/)
+# debugpy:
+
+homeassistant:
+  allowlist_external_dirs:
+    - "/workspaces/grid-cap-watcher"
+
+sensor:
+  - platform: file
+    name: "power_usage"
+    unit_of_measurement: "W"
+    file_path: /workspaces/grid-cap-watcher/sensor-data.txt

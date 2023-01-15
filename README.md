@@ -1,96 +1,125 @@
-# grid-cap-watcher
+# Grid energy level monitor
 
-[![GitHub Release][releases-shield]][releases]
-[![GitHub Activity][commits-shield]][commits]
-[![License][license-shield]](LICENSE)
+To English HA Users: As this integration only is relevent to Norwegian HA users, documentation is only available in norwegian for now.  Sorry!
 
-[![pre-commit][pre-commit-shield]][pre-commit]
-[![Black][black-shield]][black]
 
-[![hacs][hacsbadge]][hacs]
-[![Project Maintenance][maintenance-shield]][user_profile]
-[![BuyMeCoffee][buymecoffeebadge]][buymecoffee]
+## Beskrivelse
+Denne integrasjonen setter opp en platform-entitet for å holde øye med effekt-data i forhold til å holde seg innenfor et effekt-trinn hos netteier.
 
-[![Discord][discord-shield]][discord]
-[![Community Forum][forum-shield]][forum]
+Følgende sensorer blir lagt til:
 
-**TO BE REMOVED: If you need help, as a developer, to use this custom component tempalte,
-please look at the [User Guide in the Cookiecutter documentation](https://cookiecutter-homeassistant-custom-component.readthedocs.io/en/stable/quickstart.html)**
+**Energy Used**
 
-**This component will set up the following platforms.**
+  Dette er en enkel rienmann left sum basert på input sensor, som nullstiller seg for hver klokketime.
+  Sensoren angir forbruk i kWh for denne timen.
 
-| Platform        | Description                                                               |
-| --------------- | ------------------------------------------------------------------------- |
-| `binary_sensor` | Show something `True` or `False`.                                         |
-| `sensor`        | Show info from grid-cap-watcher API. |
-| `switch`        | Switch something `True` or `False`.                                       |
 
-![example][exampleimg]
+**Energy estimate this hour**
 
-## Installation
+  Estimert forbruk denne timen.  Estimatet regnes ut etter formelen (Energi Brukt) + (MomentanEffekt * Antall sekunder igjen i time)
+  Sensoren angir data i kWh.
 
-1. Using the tool of choice open the directory (folder) for your HA configuration (where you find `configuration.yaml`).
-2. If you do not have a `custom_components` directory (folder) there, you need to create it.
-3. In the `custom_components` directory (folder) create a new folder called `grid_cap_watcher`.
-4. Download _all_ the files from the `custom_components/grid_cap_watcher/` directory (folder) in this repository.
-5. Place the files you downloaded in the new directory (folder) you created.
-6. Restart Home Assistant
-7. In the HA UI go to "Configuration" -> "Integrations" click "+" and search for "grid-cap-watcher"
 
-Using your HA configuration directory (folder) as a starting point you should now also have this:
+**Grid effect level**
 
-```text
-custom_components/grid_cap_watcher/translations/en.json
-custom_components/grid_cap_watcher/translations/fr.json
-custom_components/grid_cap_watcher/translations/nb.json
-custom_components/grid_cap_watcher/translations/sensor.en.json
-custom_components/grid_cap_watcher/translations/sensor.fr.json
-custom_components/grid_cap_watcher/translations/sensor.nb.json
-custom_components/grid_cap_watcher/translations/sensor.nb.json
-custom_components/grid_cap_watcher/__init__.py
-custom_components/grid_cap_watcher/api.py
-custom_components/grid_cap_watcher/binary_sensor.py
-custom_components/grid_cap_watcher/config_flow.py
-custom_components/grid_cap_watcher/const.py
-custom_components/grid_cap_watcher/manifest.json
-custom_components/grid_cap_watcher/sensor.py
-custom_components/grid_cap_watcher/switch.py
+  Angir øvre terskelverdi basert på tre høyeste timer målt denne måneden, fra tre ulike dager.
+  Sensoren angir data i kWh.  Eksempel: Dersom du befinner deg på effekt-trinn 5-10 kWh, så vil sensoren angi 10kWh
+
+
+**Grid effect level name**
+
+  Navn på effekt-trinn hentet fra konfigurasjonen.
+
+
+**Grid effect level price**
+
+  Pris på nåværende effekt-trinn.  Angis i NOK
+
+
+**Average peak hour effect**
+
+  Snittet på de tre høyeste timer fra tre forskjellige dager målt denne måneden.
+
+
+**Available effect**
+
+  Angir maks momentaneffekt man kan bruke resten av timen og holde seg innenfor det effekt-trinnet man er på.
+  Sensoren har måleenhet på Watt.
+  Regnes ut slik: (Terskelverdi_trinn - Energi brukt) / ( Antall sekunder igjen i time) - Momentaneffekt
+  Eksempel:
+
+```
+    Effekttrinn 10 kWh, 8 kWh brukt de første 45 minutt av timen, momentaneffekt 5kW
+    Sensoren vil da regne ut hvor mange watt man kan trekke de siste 15 minutt(900 sekunder) av timen, minus
+    den momentaneffekten man allerede bruker.
+    (10000 - 8000) * 1000 * 3600 / 900 - 5000 = 3000
+
+    Sensoren vil angi at man resten av timen har 3000W effekt tilgjengelig i tillegg til det man allerede bruker.
 ```
 
-## Configuration is done in the UI
+## Installasjon
 
-<!---->
+Sensoren kan kun installeres en gang.  Installeres med å kopiere inn filene fra dette repositoryet, eller via HACS(anbefalt)
+
+### Filkopiering
+
+1.  Åpne mappen som inneholder din HA-konfiguration (`configuration.yaml`)
+2.  Dersom du ikke har en mappe som heter `custom_components` så oppretter du den
+3.  I mappen `custom_components` så lager du en ny mappe som heter `grid_energy_level`
+4.  Last ned alle filene fra `custom_components/grid_energy_level/` i dette repositoryet, og plasser dem inne i `grid_energy_level`-mappen
+5.  Restart HA
+
+
+
+## Oppsett
+
+Følgende må legges til i `configuration.yaml` :
+
+```yaml
+sensor:
+  - platform: grid_energy_level
+
+      entity_id: "sensor.ams_power_sensor"
+      precision: 2
+      max_effect: 15900
+      levels:
+        - name: "Trinn 1: 0-2 kWh"
+          threshold: 2
+          price: 135
+        - name: "Trinn 2: 2-5 kWh"
+          threshold: 5
+          price: 170
+        - name: "Trinn 3: 5-10 kWh"
+          threshold: 10
+          price: 290
+        - name: "Trinn 4: 10-15 kWh"
+          threshold: 15
+          price: 600
+        - name: "Trinn 5: 15-20 kWh"
+          threshold: 20
+          price: 800
+```
+`entity_id` setter man til effekt-måleren man har på måleravleseren.
+
+`precision` angir hvor mange desimaler sensorene skal ha.  Standard-verdi er 2, så dersom du utelater den vil sensorene ha 2 desimaler på måleverdiene.
+
+`max_effect` er ikke påkrevd, men anbefales satt til maks effekt man kan trekke uten at hovedvernet i huset kobler ut.  Tallet man angir er i Watt.
+Sensoren `Available effect` regner ut hvor høy momentaneffekt man har tilgjengelig i resten av inneværende time, og vil de siste sekundene av timen bli ekstremt høye.
+Dersom `max_effect` er angitt og sensorens verdi overstiger `max_effect` så vil verdien for `max_effect` brukes.
+
+Under `levels`, erstatt verdiene i  `name` , `threshold` og `price` med data for din nettleverandør(eksempeldata ovenfor er hentet fra Glitre Nett, tidl. Agder Energi nett)
+
+Etter å ha lagt til oppsettet så må HomeAssistant restartes for at sensorene skal vises.
+
+Dersom alt er riktig, gjort, så skal  man få opp sensorer som ligner på dette:
+
+
+![Example][sensor_example.png]
+
+
+
+
 
 ## Contributions are welcome!
 
 If you want to contribute to this please read the [Contribution guidelines](CONTRIBUTING.md)
-
-## Credits
-
-This project was generated from [@oncleben31](https://github.com/oncleben31)'s [Home Assistant Custom Component Cookiecutter](https://github.com/oncleben31/cookiecutter-homeassistant-custom-component) template.
-
-Code template was mainly taken from [@Ludeeus](https://github.com/ludeeus)'s [integration_blueprint][integration_blueprint] template
-
----
-
-[integration_blueprint]: https://github.com/custom-components/integration_blueprint
-[black]: https://github.com/psf/black
-[black-shield]: https://img.shields.io/badge/code%20style-black-000000.svg?style=for-the-badge
-[buymecoffee]: https://www.buymeacoffee.com/epaulsen
-[buymecoffeebadge]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg?style=for-the-badge
-[commits-shield]: https://img.shields.io/github/commit-activity/y/epaulsen/grid-cap-watcher.svg?style=for-the-badge
-[commits]: https://github.com/epaulsen/grid-cap-watcher/commits/main
-[hacs]: https://hacs.xyz
-[hacsbadge]: https://img.shields.io/badge/HACS-Custom-orange.svg?style=for-the-badge
-[discord]: https://discord.gg/Qa5fW2R
-[discord-shield]: https://img.shields.io/discord/330944238910963714.svg?style=for-the-badge
-[exampleimg]: example.png
-[forum-shield]: https://img.shields.io/badge/community-forum-brightgreen.svg?style=for-the-badge
-[forum]: https://community.home-assistant.io/
-[license-shield]: https://img.shields.io/github/license/epaulsen/grid-cap-watcher.svg?style=for-the-badge
-[maintenance-shield]: https://img.shields.io/badge/maintainer-%40epaulsen-blue.svg?style=for-the-badge
-[pre-commit]: https://github.com/pre-commit/pre-commit
-[pre-commit-shield]: https://img.shields.io/badge/pre--commit-enabled-brightgreen?style=for-the-badge
-[releases-shield]: https://img.shields.io/github/release/epaulsen/grid-cap-watcher.svg?style=for-the-badge
-[releases]: https://github.com/epaulsen/grid-cap-watcher/releases
-[user_profile]: https://github.com/epaulsen

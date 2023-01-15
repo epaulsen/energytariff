@@ -1,6 +1,6 @@
 """Constants for grid-cap-watcher."""
 # Base component constants
-NAME = "grid-cap-watcher"
+NAME = "Grid energy level monitor"
 DOMAIN = "grid_cap_watcher"
 DOMAIN_DATA = f"{DOMAIN}_data"
 VERSION = "0.0.1"
@@ -18,13 +18,17 @@ PLATFORMS = [SENSOR]
 CONF_ENABLED = "enabled"
 
 CONF_EFFECT_ENTITY = "entity_id"
+COORDINATOR = "rx_coordinator"
+
 
 DATA_UPDATED = f"{DOMAIN}_data_updated"
+MAX_EFFECT_ALLOWED = "max_effect"
 
 GRID_LEVELS = "levels"
 LEVEL_NAME = "name"
 LEVEL_THRESHOLD = "threshold"
 LEVEL_PRICE = "price"
+ROUNDING_PRECISION = "precision"
 
 PEAK_HOUR = "peak_hour"
 

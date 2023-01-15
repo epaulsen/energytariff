@@ -1,0 +1,15 @@
+{
+  "domain": "grid_energy_level",
+  "name": "Grid energy level tariff",
+  "documentation": "https://github.com/epaulsen/grid-cap-watcher",
+  "issue_tracker": "https://github.com/epaulsen/grid-cap-watcher/issues",
+  "dependencies": [],
+  "config_flow": false,
+  "codeowners": [
+    "@epaulsen"
+  ],
+  "requirements": [
+    "rx==3.2.0"
+  ],
+  "version": "0.0.1"
+}

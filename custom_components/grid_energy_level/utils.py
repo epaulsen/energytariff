@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta
+from typing import Any
+from .const import ROUNDING_PRECISION
 
 # from typing import Any, Callable, Optional
 # import voluptuous as vol
@@ -21,7 +23,7 @@ def start_of_current_hour(date_object: datetime) -> datetime:
 def start_of_next_hour(date_object: datetime) -> datetime:
     """returns a datetime object that is the start of next hour"""
     temp = date_object + timedelta(hours=1)
-    start_of_hour = datetime(
+    value = datetime(
         temp.year,
         temp.month,
         temp.day,
@@ -30,12 +32,22 @@ def start_of_next_hour(date_object: datetime) -> datetime:
         0,
         tzinfo=temp.tzinfo,
     )
-    return start_of_hour
+    return value
 
 
 def seconds_between(date_object_1: datetime, date_object_2: datetime) -> int:
     """Returns number of seconds between two dates"""
     return (date_object_1 - date_object_2).total_seconds()
+
+
+def get_rounding_precision(config: dict[str, Any]) -> float:
+    """Gets rounding precision for sensors with decimal value.
+    Default to the value 2 for 2 decimals"""
+    precision = config.get(ROUNDING_PRECISION)
+    if precision is None:
+        return 2
+
+    return float(precision)
 
 
 def convert_to_watt(data: any) -> float:
