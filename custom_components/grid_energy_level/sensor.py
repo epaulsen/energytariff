@@ -701,7 +701,7 @@ class GridCapacityWatcherCurrentLevelName(RestoreSensor):
     @property
     def icon(self):
         """Return the icon of the sensor."""
-        return ICON
+        return "mdi:rename-box"
 
 
 class GridCapacityWatcherCurrentLevelPrice(RestoreSensor):
@@ -760,4 +760,4 @@ class GridCapacityWatcherCurrentLevelPrice(RestoreSensor):
     @property
     def icon(self):
         """Return the icon of the sensor."""
-        return ICON
+        return "mdi:cash"

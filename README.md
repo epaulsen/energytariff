@@ -1,4 +1,4 @@
-# Grid energy level monitor
+# Grid energy level tariff monitor
 
 To English HA Users: As this integration only is relevent to Norwegian HA users, documentation is only available in norwegian for now.  Sorry!
 
@@ -6,7 +6,7 @@ To English HA Users: As this integration only is relevent to Norwegian HA users,
 ## Beskrivelse
 Denne integrasjonen setter opp en platform-entitet for å holde øye med effekt-data i forhold til å holde seg innenfor et effekt-trinn hos netteier.
 
-Følgende sensorer blir lagt til:
+Integrasjonen oppretter følgende sensorer:
 
 **Energy Used**
 
@@ -14,31 +14,41 @@ Følgende sensorer blir lagt til:
   Sensoren angir forbruk i kWh for denne timen.
 
 
+
 **Energy estimate this hour**
 
   Estimert forbruk denne timen.  Estimatet regnes ut etter formelen (Energi Brukt) + (MomentanEffekt * Antall sekunder igjen i time)
+  Eksempel: 8 kWh brukt i løpet av de første 45 minuttene av timen.  5000 W momentaneffekt.  15 minutter er 900 sekund
+  8 + (5000 * 900 / 3600 / 1000) = 9,25 kWh i estimat for timen.
   Sensoren angir data i kWh.
+
 
 
 **Grid effect level**
 
   Angir øvre terskelverdi basert på tre høyeste timer målt denne måneden, fra tre ulike dager.
   Sensoren angir data i kWh.  Eksempel: Dersom du befinner deg på effekt-trinn 5-10 kWh, så vil sensoren angi 10kWh
+  **NB!** Før sensoren har tre dager ulike dager med data, så vil verdien ikke bli riktig
+
 
 
 **Grid effect level name**
 
   Navn på effekt-trinn hentet fra konfigurasjonen.
+  **NB!** Før sensoren har tre dager ulike dager med data, så vil verdien ikke bli riktig.
 
 
 **Grid effect level price**
 
   Pris på nåværende effekt-trinn.  Angis i NOK
+  **NB!** Før sensoren har tre dager ulike dager med data, så vil verdien ikke bli riktig.
 
 
 **Average peak hour effect**
 
   Snittet på de tre høyeste timer fra tre forskjellige dager målt denne måneden.
+  **NB!** Før sensoren har tre dager ulike dager med data, så vil verdien ikke bli riktig.
+
 
 
 **Available effect**
@@ -49,7 +59,7 @@ Følgende sensorer blir lagt til:
   Eksempel:
 
 ```
-    Effekttrinn 10 kWh, 8 kWh brukt de første 45 minutt av timen, momentaneffekt 5kW
+    Effekttrinn 5-10 kWh, 8 kWh brukt de første 45 minutt av timen, momentaneffekt 5kW
     Sensoren vil da regne ut hvor mange watt man kan trekke de siste 15 minutt(900 sekunder) av timen, minus
     den momentaneffekten man allerede bruker.
     (10000 - 8000) * 1000 * 3600 / 900 - 5000 = 3000
@@ -105,7 +115,18 @@ sensor:
 
 `max_effect` er ikke påkrevd, men anbefales satt til maks effekt man kan trekke uten at hovedvernet i huset kobler ut.  Tallet man angir er i Watt.
 Sensoren `Available effect` regner ut hvor høy momentaneffekt man har tilgjengelig i resten av inneværende time, og vil de siste sekundene av timen bli ekstremt høye.
-Dersom `max_effect` er angitt og sensorens verdi overstiger `max_effect` så vil verdien for `max_effect` brukes.
+Hvis man bruker denne sensoren til å bestemme om noe kan slås av eller på, så vil den potensielt kunne angi en langt høyere tilgjengelig effekt enn det hovedvernet i sikringsskapet
+har tilgjengelig.  Dersom `max_effect` er angitt og sensorens verdi overstiger `max_effect` så vil verdien for `max_effect` brukes.
+Max effect angis i Watt, og kan regnes ut slik:
+
+```
+230-volt 1-fas: 230 * hovedsikring.  Eks med 50A hovedsikring: 230 * 50 = 11500 W
+230-volt 3-fas: 230 * hovedsikring * sqrt(3).  Eks med 40A hovedsikring: 230 * 40 * 1,732 = 15935 W
+400-volt 3-fas: 400 * hovedsikring * sqrt(3).  Eks med 40A hovedsikring: 400 * 40 * 1,732 = 27712 W
+```
+
+Hvis du ikke vet om du har 1-fas, 3-fas, 230 eller 400V, så spør en venn som er elektro-kyndig :)
+
 
 Under `levels`, erstatt verdiene i  `name` , `threshold` og `price` med data for din nettleverandør(eksempeldata ovenfor er hentet fra Glitre Nett, tidl. Agder Energi nett)
 

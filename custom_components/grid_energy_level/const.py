@@ -8,7 +8,7 @@ VERSION = "0.0.1"
 ISSUE_URL = "https://github.com/epaulsen/grid-cap-watcher/issues"
 
 # Icons
-ICON = "mdi:format-quote-close"
+ICON = "mdi:lightning-bolt"
 
 SENSOR = "sensor"
 SWITCH = "switch"
