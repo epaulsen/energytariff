@@ -97,26 +97,25 @@ Følgende må legges til i `configuration.yaml` :
 ```yaml
 sensor:
   - platform: grid_energy_level
-
-      entity_id: "sensor.ams_power_sensor"
-      precision: 2
-      max_effect: 15900
-      levels:
-        - name: "Trinn 1: 0-2 kWh"
-          threshold: 2
-          price: 135
-        - name: "Trinn 2: 2-5 kWh"
-          threshold: 5
-          price: 170
-        - name: "Trinn 3: 5-10 kWh"
-          threshold: 10
-          price: 290
-        - name: "Trinn 4: 10-15 kWh"
-          threshold: 15
-          price: 600
-        - name: "Trinn 5: 15-20 kWh"
-          threshold: 20
-          price: 800
+    entity_id: "sensor.ams_power_sensor"
+    precision: 2
+    max_effect: 15900
+    levels:
+      - name: "Trinn 1: 0-2 kWh"
+        threshold: 2
+        price: 135
+      - name: "Trinn 2: 2-5 kWh"
+        threshold: 5
+        price: 170
+      - name: "Trinn 3: 5-10 kWh"
+        threshold: 10
+        price: 290
+      - name: "Trinn 4: 10-15 kWh"
+        threshold: 15
+        price: 600
+      - name: "Trinn 5: 15-20 kWh"
+        threshold: 20
+        price: 800
 ```
 `entity_id` setter man til effekt-måleren man har på måleravleseren.
 
