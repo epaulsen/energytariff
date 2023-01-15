@@ -550,7 +550,7 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
         return self.attr
 
 
-class GridCapWatcherAvailableEffectRemainingHour(SensorEntity):
+class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor, RestoreEntity):
     """Sensor that measures the max power draw that can be consumed for the remainin part of current hour"""
 
     _state_class = SensorStateClass.MEASUREMENT
@@ -568,8 +568,9 @@ class GridCapWatcherAvailableEffectRemainingHour(SensorEntity):
         self._max_effect = config.get(MAX_EFFECT_ALLOWED)
         self._energy = None
         self._sensor_value = None
+        self.attr = {"grid_threshold_level": None}
         self._last_update = dt.now()
-        self._threshold_level = None
+
         self._attr_unique_id = (
             f"{DOMAIN}_{self._effect_sensor_id}_remaining_effect_available".replace(
                 "sensor.", ""
@@ -583,10 +584,22 @@ class GridCapWatcherAvailableEffectRemainingHour(SensorEntity):
             lambda state: self._effect_state_change(state)
         )
 
+    async def async_added_to_hass(self) -> None:
+        """Call when entity about to be added to hass."""
+        await super().async_added_to_hass()
+        savedstate = await self.async_get_last_state()
+        if savedstate:
+            if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+                self._sensor_value = float(savedstate.state)
+            if "grid_threshold_level" in savedstate.attributes:
+                self.attr["grid_threshold_level"] = savedstate.attributes[
+                    "grid_threshold_level"
+                ]
+
     def _threshold_state_change(self, state: GridThresholdData):
         if state is None:
             return
-        self._threshold_level = state.level
+        self.attr["grid_threshold_level"] = state.level
         self.__calculate()
 
     def _effect_state_change(self, state: EnergyData):
@@ -600,11 +613,11 @@ class GridCapWatcherAvailableEffectRemainingHour(SensorEntity):
         if (
             self._energy is None
             or self._effect is None
-            or self._threshold_level is None
+            or self.attr["grid_threshold_level"] is None
         ):
             return
 
-        remaining_kWh = self._threshold_level - self._energy
+        remaining_kWh = self.attr["grid_threshold_level"] - self._energy
 
         seconds_remaing = seconds_between(start_of_next_hour(dt.now()), dt.now())
 
@@ -647,6 +660,10 @@ class GridCapWatcherAvailableEffectRemainingHour(SensorEntity):
     def icon(self):
         """Return the icon of the sensor."""
         return ICON
+
+    @property
+    def extra_state_attributes(self):
+        return self.attr
 
 
 class GridCapacityWatcherCurrentLevelName(RestoreSensor):
