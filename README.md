@@ -12,29 +12,29 @@ Integrasjonen oppretter følgende sensorer:
 
 **Energy Used**
 
-  Dette er en enkel rienmann left sum basert på input sensor, som nullstiller seg for hver klokketime.  
+  Dette er en enkel rienmann left sum basert på input sensor, som nullstiller seg for hver klokketime.
   Input sensor i configuration.yaml må enten måle i W eller kW.  Sensoren angir forbruk i kWh for inneværende time.
 
 **Energy estimate this hour**
 
   Estimert forbruk denne timen.  Estimatet regnes ut etter formelen (Energi Brukt) + (MomentanEffekt * Antall sekunder igjen i time)
-  Eksempel: 
-  
+  Eksempel:
+
 ```
-  8 kWh brukt i løpet av de første 45 minuttene av timen.  
-  5000 W momentaneffekt.  
+  8 kWh brukt i løpet av de første 45 minuttene av timen.
+  5000 W momentaneffekt.
   15 minutter er 900 sekund
-  
+
   8 + (5000 * 900 / 3600 / 1000) = 9,25 kWh i estimat for timen.
 ```
 
   Sensoren angir data i kWh.
-  
+
 ## Effekt-trinn sensorer:
 **NB!** Disse sensorene baserer seg på at effekt-trinn regnes ut av snittet for de tre timene med høyest forbruk på tre forskjellige dager.
-Inntil man har startet på dag 3 så vil nødvendigvis ikke disse sensorene gi riktige data.  
+Inntil man har startet på dag 3 så vil nødvendigvis ikke disse sensorene gi riktige data.
 For dag en så vil effekt-trinn sensorene vises basert på høyeste time kun på dag 1.
-For dag to så vil effekt-trinn sensorene vises for snittet av dag 1 og 2.  
+For dag to så vil effekt-trinn sensorene vises for snittet av dag 1 og 2.
 Fra og med første time på dag 3 så vil sensorene vise riktig verdi.
 
 **Grid effect level**
@@ -45,7 +45,7 @@ Fra og med første time på dag 3 så vil sensorene vise riktig verdi.
 **Grid effect level name**
 
   Navn på effekt-trinn hentet fra konfigurasjonen.
-  
+
 
 
 **Grid effect level price**
@@ -56,7 +56,7 @@ Fra og med første time på dag 3 så vil sensorene vise riktig verdi.
 **Average peak hour effect**
 
   Snittet på de tre høyeste timer fra tre forskjellige dager målt denne måneden.
-  
+
 **Available effect**
 
   Angir maks momentaneffekt man kan bruke resten av timen og holde seg innenfor det effekt-trinnet man er på.
@@ -70,12 +70,12 @@ Fra og med første time på dag 3 så vil sensorene vise riktig verdi.
     Momentaneffekt 5kW
     Sensoren vil da regne ut hvor mange watt man kan trekke de siste 15 minutt(900 sekunder) av timen, minus
     den momentaneffekten man allerede bruker.
-    
+
     (10000 - 8000) * 1000 * 3600 / 900 - 5000 = 3000
 
     Sensoren vil angi at man resten av timen har 3000W effekt tilgjengelig i tillegg til det man allerede bruker.
 ```
-Ett positivt tall på denne sensoren betyr at man kan forbruke mer effekt i gjenværende del av timen. 
+Ett positivt tall på denne sensoren betyr at man kan forbruke mer effekt i gjenværende del av timen.
 
 Negativt tall her betyr at man vil gå over effekt-trinnet dersom man opprettholder forbruket.
 
@@ -111,7 +111,7 @@ Følgende må legges til i `configuration.yaml` :
 
 ```yaml
 sensor:
-  - platform: grid_energy_level
+  - platform: grid_energy_tariff_monitor
     entity_id: "sensor.ams_power_sensor"
     precision: 2
     max_effect: 15900
