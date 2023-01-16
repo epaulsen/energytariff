@@ -1,9 +1,6 @@
 {
   "name": "grid-energy-tariff-monitor",
   "hacs": "1.6.0",
-  "domains": [
-    "sensor"
-  ],
   "iot_class": "Local Push",
   "homeassistant": "0.118.0",
   "render_readme": true
