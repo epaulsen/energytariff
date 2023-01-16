@@ -75,6 +75,10 @@ Fra og med første time på dag 3 så vil sensorene vise riktig verdi.
 
     Sensoren vil angi at man resten av timen har 3000W effekt tilgjengelig i tillegg til det man allerede bruker.
 ```
+Ett positivt tall på denne sensoren betyr at man kan forbruke mer effekt i gjenværende del av timen. 
+
+Negativt tall her betyr at man vil gå over effekt-trinnet dersom man opprettholder forbruket.
+
 
 ## Installasjon
 
