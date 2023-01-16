@@ -121,14 +121,14 @@ sensor:
         threshold: 20
         price: 800
 ```
-`entity_id` setter man til effekt-måleren man har på måleravleseren.
+`entity_id` setter man til effektmåleren-entiteten man har på måleravleseren.
 
 `precision` angir hvor mange desimaler sensorene skal ha.  Standard-verdi er 2, så dersom du utelater den vil sensorene ha 2 desimaler på måleverdiene.
 
 `max_effect` er ikke påkrevd, men anbefales satt til maks effekt man kan trekke uten at hovedvernet i huset kobler ut.  Tallet man angir er i Watt.
-Sensoren `Available effect` regner ut hvor høy momentaneffekt man har tilgjengelig i resten av inneværende time, og vil de siste sekundene av timen bli ekstremt høye.
-Hvis man bruker denne sensoren til å bestemme om noe kan slås av eller på, så vil den potensielt kunne angi en langt høyere tilgjengelig effekt enn det hovedvernet i sikringsskapet
-har tilgjengelig.  Dersom `max_effect` er angitt og sensorens verdi overstiger `max_effect` så vil verdien for `max_effect` brukes.
+Sensoren `Available effect` regner ut hvor høy momentaneffekt man har tilgjengelig i resten av inneværende time, og vil de siste minuttene av timen bli veldig høye.
+Hvis man bruker denne sensoren til å bestemme om noe kan slås på, så har den potensiale til å slå på mer enn hovedvernet i huset tillater.
+Dersom `max_effect` er angitt og sensorens verdi overstiger `max_effect` så vil verdien for `max_effect` brukes.
 Max effect angis i Watt, og kan regnes ut slik:
 
 ```
