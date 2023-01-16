@@ -1,7 +1,7 @@
 """Constants for grid-cap-watcher."""
 # Base component constants
 NAME = "Grid energy level monitor"
-DOMAIN = "grid_cap_watcher"
+DOMAIN = "grid_energy_tariff_monitor"
 DOMAIN_DATA = f"{DOMAIN}_data"
 VERSION = "0.0.1"
 
