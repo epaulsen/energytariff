@@ -32,7 +32,7 @@ Integrasjonen oppretter følgende sensorer:
   
 ## Effekt-trinn sensorer:
 **NB!** Disse sensorene baserer seg på at effekt-trinn regnes ut av snittet for de tre timene med høyest forbruk på tre forskjellige dager.
-Inntil man har starter på dag 3 så vil nødvendigvis ikke disse sensorene gi riktige data.  
+Inntil man har startet på dag 3 så vil nødvendigvis ikke disse sensorene gi riktige data.  
 For dag en så vil effekt-trinn sensorene vises basert på høyeste time kun på dag 1.
 For dag to så vil effekt-trinn sensorene vises for snittet av dag 1 og 2.  
 Fra og med første time på dag 3 så vil sensorene vise riktig verdi.
