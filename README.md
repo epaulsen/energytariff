@@ -92,7 +92,18 @@ Sensoren kan kun installeres en gang.  Installeres med å kopiere inn filene fra
 4.  Last ned alle filene fra `custom_components/grid_energy_level/` i dette repositoryet, og plasser dem inne i `grid_energy_level`-mappen
 5.  Restart HA
 
+### HACS(anbefalt)
+Inntil videre så må man legge til custom repository for å få installert denne via HACS
 
+1.  Start HACS
+2.  Gå til `Integrations` / `Integrasjoner`
+3.  Klikk på ... oppe i høyre hjørne, velg `Add custom repository` / `Tilpassede pakkelager`
+4.  I `Repository` / `Pakkelager` skriver man url til dette repoet
+    https://github.com/epaulsen/grid-energy-tariff-monitor
+5.  `Category` / `Kategori` skal være integrasjon
+6.  Trykk på `Add` / `Legg til`
+
+Integrasjonen skal nå bli listet opp som mulig å installere.  Installeres på samme måte som en hvilken som helst annen integrasjon.
 
 ## Oppsett
 
