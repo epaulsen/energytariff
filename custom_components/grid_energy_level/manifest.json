@@ -1,9 +1,11 @@
 {
   "domain": "grid_energy_level",
   "name": "Grid energy level tariff",
+  "integration_type": "device",
   "documentation": "https://github.com/epaulsen/grid-energy-tariff-monitor",
   "issue_tracker": "https://github.com/epaulsen/grid-energy-tariff-monitor/issues",
   "dependencies": [],
+  "iot_class": "calculated",
   "config_flow": false,
   "codeowners": [
     "@epaulsen"
