@@ -1,5 +1,5 @@
 {
-  "name": "grid_energy_tariff_monitor",
+  "name": "Grid Energy Tariff Monitor",
   "hacs": "1.6.0",
   "homeassistant": "0.118.0",
   "render_readme": true
