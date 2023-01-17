@@ -43,6 +43,7 @@ from .const import (
     PEAK_HOUR,
     MAX_EFFECT_ALLOWED,
     ROUNDING_PRECISION,
+    SENSOR_PREFIX,
 )
 
 from .coordinator import GridCapacityCoordinator, EnergyData, GridThresholdData
@@ -193,7 +194,7 @@ class GridCapWatcherEnergySensor(RestoreSensor):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return "Energy used"
+        return f"{SENSOR_PREFIX} Energy used this hour"
 
     @property
     def unique_id(self) -> str:
@@ -266,7 +267,7 @@ class GridCapWatcherEstimatedEnergySensor(SensorEntity):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return "Energy estimate this hour"
+        return f"{SENSOR_PREFIX} Energy estimate this hour"
 
     @property
     def unique_id(self) -> str:
@@ -429,7 +430,7 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return "Grid effect level"
+        return f"{SENSOR_PREFIX} Grid effect upper threshold"
 
     @property
     def unique_id(self) -> str:
@@ -523,7 +524,7 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return "Average peak hour effect"
+        return f"{SENSOR_PREFIX} Average peak hour effect"
 
     @property
     def unique_id(self) -> str:
@@ -639,7 +640,7 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor, RestoreEntity):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return "Available effect"
+        return f"{SENSOR_PREFIX} Available effect this hour"
 
     @property
     def unique_id(self) -> str:
@@ -699,7 +700,7 @@ class GridCapacityWatcherCurrentLevelName(RestoreSensor):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return "Grid effect level name"
+        return f"{SENSOR_PREFIX} effect level name"
 
     @property
     def unique_id(self) -> str:
@@ -758,7 +759,7 @@ class GridCapacityWatcherCurrentLevelPrice(RestoreSensor):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return "Grid effect level price"
+        return f"{SENSOR_PREFIX} effect level price"
 
     @property
     def unique_id(self) -> str:

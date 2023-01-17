@@ -2,83 +2,8 @@
 
 To English HA Users: As this integration only is relevent for Norwegian HA users, documentation is only available in norwegian for now.  Sorry!
 
-
 ## Beskrivelse
-Denne integrasjonen setter opp en platform-entitet for å holde øye med effekt-data i forhold til å holde seg innenfor et effekt-trinn hos netteier.
-
-Integrasjonen oppretter følgende sensorer:
-
-## Generelle sensorer:
-
-**Energy Used**
-
-  Dette er en enkel rienmann left sum basert på input sensor, som nullstiller seg for hver klokketime.
-  Input sensor i configuration.yaml må enten måle i W eller kW.  Sensoren angir forbruk i kWh for inneværende time.
-
-**Energy estimate this hour**
-
-  Estimert forbruk denne timen.  Estimatet regnes ut etter formelen (Energi Brukt) + (MomentanEffekt * Antall sekunder igjen i time)
-  Eksempel:
-
-```
-  8 kWh brukt i løpet av de første 45 minuttene av timen.
-  5000 W momentaneffekt.
-  15 minutter er 900 sekund
-
-  8 + (5000 * 900 / 3600 / 1000) = 9,25 kWh i estimat for timen.
-```
-
-  Sensoren angir data i kWh.
-
-## Effekt-trinn sensorer:
-**NB!** Disse sensorene baserer seg på at effekt-trinn regnes ut av snittet for de tre timene med høyest forbruk på tre forskjellige dager.
-Inntil man har startet på dag 3 så vil nødvendigvis ikke disse sensorene gi riktige data.
-For dag en så vil effekt-trinn sensorene vises basert på høyeste time kun på dag 1.
-For dag to så vil effekt-trinn sensorene vises for snittet av dag 1 og 2.
-Fra og med første time på dag 3 så vil sensorene vise riktig verdi.
-
-**Grid effect level**
-
-  Angir øvre terskelverdi basert på tre høyeste timer målt denne måneden, fra tre ulike dager.
-  Sensoren angir data i kWh.  Eksempel: Dersom du befinner deg på effekt-trinn 5-10 kWh, så vil sensoren angi 10kWh
-
-**Grid effect level name**
-
-  Navn på effekt-trinn hentet fra konfigurasjonen.
-
-
-
-**Grid effect level price**
-
-  Pris på nåværende effekt-trinn.  Angis i NOK
-
-
-**Average peak hour effect**
-
-  Snittet på de tre høyeste timer fra tre forskjellige dager målt denne måneden.
-
-**Available effect**
-
-  Angir maks momentaneffekt man kan bruke resten av timen og holde seg innenfor det effekt-trinnet man er på.
-  Sensoren har måleenhet på Watt.
-  Regnes ut slik: (Terskelverdi_trinn - Energi brukt) / ( Antall sekunder igjen i time) - Momentaneffekt
-  Eksempel:
-
-```
-    Effekttrinn 5-10 kWh.
-    8 kWh brukt de første 45 minutt av timen.
-    Momentaneffekt 5kW
-    Sensoren vil da regne ut hvor mange watt man kan trekke de siste 15 minutt(900 sekunder) av timen, minus
-    den momentaneffekten man allerede bruker.
-
-    (10000 - 8000) * 1000 * 3600 / 900 - 5000 = 3000
-
-    Sensoren vil angi at man resten av timen har 3000W effekt tilgjengelig i tillegg til det man allerede bruker.
-```
-Ett positivt tall på denne sensoren betyr at man kan forbruke mer effekt i gjenværende del av timen.
-
-Negativt tall her betyr at man vil gå over effekt-trinnet dersom man opprettholder forbruket.
-
+Denne integrasjonen setter opp en platform-entitet for å holde øye med effekt-data som kan brukes til å holde seg innenfor et effekt-trinn hos netteier.
 
 ## Installasjon
 
@@ -107,7 +32,8 @@ Integrasjonen skal nå bli listet opp som mulig å installere.  Installeres på 
 
 ## Oppsett
 
-Følgende må legges til i `configuration.yaml` :
+Oppsettet av sensorene gjøres i yaml.
+Eksempel på oppsett i `configuration.yaml` :
 
 ```yaml
 sensor:
@@ -132,6 +58,7 @@ sensor:
         threshold: 20
         price: 800
 ```
+
 `entity_id` setter man til effektmåleren-entiteten man har på måleravleseren.
 
 `precision` angir hvor mange desimaler sensorene skal ha.  Standard-verdi er 2, så dersom du utelater den vil sensorene ha 2 desimaler på måleverdiene.
@@ -157,11 +84,81 @@ Etter å ha lagt til oppsettet så må HomeAssistant restartes for at sensorene 
 
 Dersom alt er riktig, gjort, så skal  man få opp sensorer som ligner på dette:
 
-
 ![Example](./sensor_example.png)
 
+## Forklaring til sensorene
+
+### Generelle sensorer:
+
+**Grid Tariff Energy used this hour**
+
+  Dette er en enkel rienmann left sum basert på input sensor, som nullstiller seg for hver klokketime.
+  Input sensor i configuration.yaml må enten måle i W eller kW.  Sensoren angir forbruk i kWh for inneværende time.
+
+**Grid Tariff Energy estimate this hour**
+
+  Estimert forbruk denne timen.  Estimatet regnes ut etter formelen (Energi Brukt) + (MomentanEffekt * Antall sekunder igjen i time)
+  Eksempel:
+
+```
+  8 kWh brukt i løpet av de første 45 minuttene av timen.
+  5000 W momentaneffekt.
+  15 minutter er 900 sekund
+
+  8 + (5000 * 900 / 3600 / 1000) = 9,25 kWh i estimat for timen.
+```
+
+  Sensoren angir data i kWh.
+
+### Effekt-trinn sensorer:
+
+**NB!** Disse sensorene baserer seg på at effekt-trinn regnes ut av snittet for de tre timene med høyest forbruk på tre forskjellige dager.
+Inntil man har startet på dag 3 så vil nødvendigvis ikke disse sensorene gi riktige data.
+For dag en så vil effekt-trinn sensorene vises basert på høyeste time kun på dag 1.
+For dag to så vil effekt-trinn sensorene vises for snittet av dag 1 og 2.
+Fra og med første time på dag 3 så vil sensorene vise riktig verdi.
+
+**Grid Tariff effect level threshold**
+
+  Angir øvre terskelverdi basert på tre høyeste timer målt denne måneden, fra tre ulike dager.
+  Sensoren angir data i kWh.  Eksempel: Dersom du befinner deg på effekt-trinn 5-10 kWh, så vil sensoren angi 10kWh
+
+**Grid Tariff Effect level name**
+
+  Navn på effekt-trinn hentet fra konfigurasjonen.
 
 
+
+**Grid Tariff Effect level price**
+
+  Pris på nåværende effekt-trinn.  Angis i NOK
+
+
+**Grid Tariff Average peak hour effect**
+
+  Snittet på de tre høyeste timer fra tre forskjellige dager målt denne måneden.
+
+**Grid Tariff Available effect this hour**
+
+  Angir maks momentaneffekt man kan bruke resten av timen og holde seg innenfor det effekt-trinnet man er på.
+  Sensoren har måleenhet på Watt.
+  Regnes ut slik: (Terskelverdi_trinn - Energi brukt) / ( Antall sekunder igjen i time) - Momentaneffekt
+  Eksempel:
+
+```
+    Effekttrinn 5-10 kWh.
+    8 kWh brukt de første 45 minutt av timen.
+    Momentaneffekt 5kW
+    Sensoren vil da regne ut hvor mange watt man kan trekke de siste 15 minutt(900 sekunder) av timen, minus
+    den momentaneffekten man allerede bruker.
+
+    (10000 - 8000) * 1000 * 3600 / 900 - 5000 = 3000
+
+    Sensoren vil angi at man resten av timen har 3000W effekt tilgjengelig i tillegg til det man allerede bruker.
+```
+Ett positivt tall på denne sensoren betyr at man kan forbruke mer effekt i gjenværende del av timen.
+
+Negativt tall her betyr at man vil gå over effekt-trinnet dersom man opprettholder forbruket.
 
 
 ## Contributions are welcome!

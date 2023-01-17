@@ -3,7 +3,7 @@
 NAME = "Grid energy level monitor"
 DOMAIN = "grid_energy_tariff_monitor"
 DOMAIN_DATA = f"{DOMAIN}_data"
-VERSION = "0.0.1"
+VERSION = "0.0.3"
 
 ISSUE_URL = "https://github.com/epaulsen/grid-cap-watcher/issues"
 
@@ -29,13 +29,8 @@ LEVEL_NAME = "name"
 LEVEL_THRESHOLD = "threshold"
 LEVEL_PRICE = "price"
 ROUNDING_PRECISION = "precision"
-
+SENSOR_PREFIX = "Grid Tariff"
 PEAK_HOUR = "peak_hour"
-
-SENSOR_DATA_UPDATED = f"{DOMAIN}_event_sensor_update"
-SENSOR_DATA_UPDATED_HOUR_COMPLETE = f"{DOMAIN}_event_sensor_update_hour_complete"
-SENSOR_DATA_EFFECT_LEVEL_CHANGED = f"{DOMAIN}_event_sensor_effect_level_changed"
-SENSOR_DATA_TOP_THREE_CHANGED = f"{DOMAIN}_event_sensor_top_three_changed"
 
 # Defaults
 DEFAULT_NAME = DOMAIN
