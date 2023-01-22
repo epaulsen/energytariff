@@ -19,7 +19,7 @@ This sensor can either be installed manually, or via HACS(recommended)
 4.  Download all files from `custom_components/energytariff/` in this repository and put them in `energytariff`-folder
 5.  Restart HA
 
-### HACS(anbefalt)
+### HACS(recommended)
 
 Go to HACS -> Integrations, click the blue + sign at the bottom right of the screen.
 Search for `EnergyTariff` and install it as any other HACS component.
@@ -105,6 +105,7 @@ A typical graph for this sensor looks like this:
 This sensor gives an estimate of how much energy that will be consumed in the current hour.
 
 Given that `EC` is energy consumed, `EF` is current power and `TD` is remaining seconds of hour, calculation is done using this formula:
+
 $$Estimate = EC + {EF*TD\over3600*1000}$$
 
 
@@ -117,6 +118,7 @@ Output is in kWh.  Sample sensor data:
 This sensor displays how much power you can use for the remaining part of current hour without exceeding configured threshold.  If `target_energy` is configured, this value is used as a threshold.  Otherwise, if `level` setting is configured, the current energy level threshold value is used.  If neither are configured, this sensor is unavailable
 
 Given that `EC` is energy consumed, `EF` is current power, `TT` is threshold and `TD` is remaining seconds of hour, calculation is done using this formula:
+
 $$Available = {({TT - EC})*3600*1000 \over TD} - EF$$
 
 If this sensor has a positive value, power usage can be increased without exceeding the threshold.  When the sensor has a negative value, power usage needs to be decreased in order to not exceed threshold.
@@ -130,6 +132,7 @@ The last few minutes of an hour `TD` in the formula above will become quite low,
 resulting in available power to grow expontentially, and possibly exceeding the total available power that can be used without blowing the main circuit breaker.  It is highly recommended to set this parameter to a sensible value that is below the total power that can be utilized safely.
 
 **target_energy parameter**
+
 Sets the threshold energy value for this sensor to a fixed value.  If not set, threshold value from current grid energy level is used.
 As sensor data from three different days are needed in order to calculate grid level properly, it can be useful to set this to a pre-determined level that you do not want to exceed.
 
