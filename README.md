@@ -1,5 +1,6 @@
 # EnergyTariff
 
+![Sensors example](doc/sensors.png)
 
 ## Description
 
