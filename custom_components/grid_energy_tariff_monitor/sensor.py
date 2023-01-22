@@ -109,6 +109,7 @@ class GridCapWatcherEnergySensor(RestoreSensor):
         self._hass = hass
         self._effect_sensor_id = config.get(CONF_EFFECT_ENTITY)
         self._precision = get_rounding_precision(config)
+        self._last_update = None
         self.attr = {
             CONF_EFFECT_ENTITY: self._effect_sensor_id,
             PEAK_HOUR: None,
@@ -139,7 +140,7 @@ class GridCapWatcherEnergySensor(RestoreSensor):
                 "old_state"
             ].state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 old_value = convert_to_watt(event.data["old_state"])
-                old_updated = event.data["old_state"].last_updated
+                old_updated = self._last_update
 
                 if (
                     self._energy_consumed not in (STATE_UNKNOWN, STATE_UNAVAILABLE)
@@ -151,6 +152,9 @@ class GridCapWatcherEnergySensor(RestoreSensor):
 
                 # Crossing hour threshold.  Reset energy counter
                 if old_updated.hour != new_updated.hour:
+
+                    _LOGGER.debug("New hour: %s", new_updated)
+
                     cutoff = start_of_current_hour(new_updated)
 
                     # Calculate energy for last update on old hour first
@@ -182,6 +186,7 @@ class GridCapWatcherEnergySensor(RestoreSensor):
 
                     # Fire HA event so that other sensors can be updated
                     await self.fire_event(new_value, new_updated)
+            self._last_update = new_updated
 
     async def fire_event(self, effect: float, timestamp: datetime) -> bool:
         """Fire HA event so that dependent sensors can update their respective values"""
@@ -339,13 +344,16 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
         day = state.timestamp.day
         hour = state.timestamp.hour
         energy = state.energy_consumed
+        timestamp = state.timestamp
 
-        if self._last_update is not None and dt.now().month != self._last_update.month:
+        if self._last_update is not None and timestamp.month != self._last_update.month:
+
+            _LOGGER.debug("New month: %s", timestamp)
             # New month, so reset top_three list and sensor value
             self.attr["top_three"].clear()
             self._sensor_value = None
 
-        self._last_update = dt.now()
+        self._last_update = timestamp
 
         consumption = {
             "day": day,
