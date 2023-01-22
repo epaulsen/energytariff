@@ -37,7 +37,7 @@ Eksempel på oppsett i `configuration.yaml` :
 
 ```yaml
 sensor:
-  - platform: grid_energy_tariff_monitor
+  - platform: energytariff
     entity_id: "sensor.ams_power_sensor"
     precision: 2
     max_effect: 15900

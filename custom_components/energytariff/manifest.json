@@ -1,5 +1,5 @@
 {
-  "domain": "grid_energy_tariff_monitor",
+  "domain": "energytariff",
   "name": "Grid energy level tariff",
   "integration_type": "device",
   "documentation": "https://github.com/epaulsen/grid-energy-tariff-monitor",
