@@ -41,7 +41,7 @@ sensor:
 
 | Name | Type | Default | Since | Description |
 |------|------|---------|-------|-------------|
-| entity_id | string | **required** | v0.0.1 | entity_id for your AMS meter sensor that provides current power usage. |
+| entity_id | string | **required** | v0.0.1 | entity_id for your AMS meter sensor that provides current power usage.  This sensor is required, and value needs to be in either W or kW. |
 | precision | int | 2 | v0.0.1 | Number of decimals to use in rounding.  Defaults to 2, giving all sensors two decimals. |
 | target_energy | float | None | v0.0.1 | Target energy consumption in kWh.  See sensor "Available power this hour" for more detailed description. |
 | max_power | float | None | v0.0.1 | Max energy(in kWh) reported by "Available power this hour" sensor.See sensor "Available power this hour" for more detailed description. |
@@ -80,18 +80,18 @@ This integration provides the following sensors:
 
 | Name | Unit | Description |
 |------|------|-------------|
-| Energy used this hour | kWh | Total amount of energy consumed this hour.  Resets to zero at the start of a new hour. |
-| Energy estimate this hour | kWh | Energy estimate this hour.  Based on energy consumption so far + current_power * remaining_seconds |
-| Available power this hour | W | How much power that can be used for the remaining part of hour and still remain within threshold limit, either configured in `target_energy` setting or at the configured grid level threshold(`level` threshold). |
-| Average peak hour energy | kWh | The highest hourly consumption, measured on three different days.  Used to calculate grid energy level.  Resets every month. |
+| [Energy used this hour](#energy-used-this-hour) | kWh | Total amount of energy consumed this hour.  Resets to zero at the start of a new hour. |
+| [Energy estimate this hour](#energy-estimate-this-hour) | kWh | Energy estimate this hour.  Based on energy consumption so far + current_power * remaining_seconds |
+| [Available power this hour](#available-power-this-hour) | W | How much power that can be used for the remaining part of hour and still remain within threshold limit, either configured in `target_energy` setting or at the configured grid level threshold(`level` threshold). |
+| [Average peak hour energy](#average-peak-hour-energy) | kWh | The highest hourly consumption, measured on three different days.  Used to calculate grid energy level.  Resets every month. |
 
 Additionally, if `levels` are configured, the following sensors are added:
 
 | Name | Unit | Description |
 |------|------|-------------|
-| Energy level name | string | Name of current energy level |
-| Energy level price | currency | Price of current energy level |
-| Energy level upper threshold | kWh | Upper energy threshold of current energy level |
+| [Energy level name](#energy-level-name) | string | Name of current energy level |
+| [Energy level price](#energy-level-price) | currency | Price of current energy level |
+| [Energy level upper threshold](#energy-level-upper-threshold) | kWh | Upper energy threshold of current energy level |
 
 ### Energy Used this hour
 
@@ -106,7 +106,7 @@ This sensor gives an estimate of how much energy that will be consumed in the cu
 
 Given that `EC` is energy consumed, `EF` is current power and `TD` is remaining seconds of hour, calculation is done using this formula:
 
-$$Estimate = EC + {EF*TD\over3600*1000}$$
+$$Estimate = EC + {{EF * TD}\over{3600 * 1000}}$$
 
 
 Output is in kWh.  Sample sensor data:
@@ -119,11 +119,12 @@ This sensor displays how much power you can use for the remaining part of curren
 
 Given that `EC` is energy consumed, `EF` is current power, `TT` is threshold and `TD` is remaining seconds of hour, calculation is done using this formula:
 
-$$Available = {({TT - EC})*3600*1000 \over TD} - EF$$
+$$Available = {({TT - EC}) * 3600 * 1000 \over TD} - EF$$
 
 If this sensor has a positive value, power usage can be increased without exceeding the threshold.  When the sensor has a negative value, power usage needs to be decreased in order to not exceed threshold.
 
-Sample graph from sensor.
+Sample graph from sensor.  Notice that the sensor does not exceed `max_power` threshold value, which in this case is configured to 15300 W.
+
 ![Example energy used](doc/available_effect_this_hour.png)
 
 **max_power parameter**
@@ -136,10 +137,18 @@ resulting in available power to grow expontentially, and possibly exceeding the 
 Sets the threshold energy value for this sensor to a fixed value.  If not set, threshold value from current grid energy level is used.
 As sensor data from three different days are needed in order to calculate grid level properly, it can be useful to set this to a pre-determined level that you do not want to exceed.
 
+## Average peak hour energy
+This sensor displays the average of the three hours with highest energy usage, from three different days.
+Value is reset when a new month starts.
+
+**NOTE** Sensor will not work properly until it it has two full days of data + 1 hour from day 3.  
+For the first day after month start, it will display the highest consumption that is measured for an individual hour.
+On day two, it will measure an anverage of highest consumption from day 1 and 2.  On day three the sensor will provide correct values, measuring the average of the three highest hours from three different days.
+
 ### Energy level name
 This sensor provides the current energy step level for your average energy usage.  If `levels` are not configured, this sensor is not available.
 
-### Energy level threshold
+### Energy level upper threshold
 This sensor provides the upper threshold value for current energy level.
 If `levels` are not configured, this sensor is not available.
 
@@ -147,8 +156,6 @@ If `levels` are not configured, this sensor is not available.
 ### Energy level price
 This sensor provides the price for the current energy level.
 If `levels` are not configured, this sensor is not available.
-
-
 
 ## Contributions are welcome!
 
