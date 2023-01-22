@@ -1,7 +1,7 @@
 sensor:
     - platform: energytariff
       entity_id: "sensor.power_usage"
-      max_effect: 15900
+      max_power: 15900
       precision: 3
       target_energy: 10
       levels:
