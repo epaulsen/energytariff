@@ -1,0 +1,22 @@
+sensor:
+    - platform: energytariff
+      entity_id: "sensor.power_usage"
+      max_effect: 15900
+      precision: 3
+      target_energy: 10
+      levels:
+        - name: "Trinn 1: 0-2 kWh"
+          threshold: 2
+          price: 135
+        - name: "Trinn 2: 2-5 kWh"
+          threshold: 5
+          price: 170
+        - name: "Trinn 3: 5-10 kWh"
+          threshold: 10
+          price: 290
+        - name: "Trinn 4: 10-15 kWh"
+          threshold: 15
+          price: 600
+        - name: "Trinn 5: 15-20 kWh"
+          threshold: 20
+          price: 800

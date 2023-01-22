@@ -1,164 +1,146 @@
-# Grid energy level tariff monitor
+# EnergyTariff
 
-To English HA Users: As this integration only is relevent for Norwegian HA users, documentation is only available in norwegian for now.  Sorry!
 
-## Beskrivelse
-Denne integrasjonen setter opp en platform-entitet for å holde øye med effekt-data som kan brukes til å holde seg innenfor et effekt-trinn hos netteier.
+## Description
 
-## Installasjon
+This integration adds a platform entity that provides sensors to monitor energy consumption.
+In order to use this in a meaningful way, a meter reader for the total power usage of the HA installation is needed,
+typically this means that you have a meter reader installed on your AMS meter.
 
-Sensoren kan kun installeres en gang.  Installeres med å kopiere inn filene fra dette repositoryet, eller via HACS(anbefalt)
+## Installation
 
-### Filkopiering
+This sensor can either be installed manually, or via HACS(recommended)
 
-1.  Åpne mappen som inneholder din HA-konfiguration (`configuration.yaml`)
-2.  Dersom du ikke har en mappe som heter `custom_components` så oppretter du den
-3.  I mappen `custom_components` så lager du en ny mappe som heter `grid_energy_level`
-4.  Last ned alle filene fra `custom_components/grid_energy_level/` i dette repositoryet, og plasser dem inne i `grid_energy_level`-mappen
+### Manual install
+
+1.  Open the folder containing your HA install, and locate the config folder.  It will contain a file called (`configuration.yaml`)
+2.  If there is not a subfolder in config folder called `custom_components`, create it.
+3.  Inside `custom_components` folder, create a new folder named `energytariff`
+4.  Download all files from `custom_components/energytariff/` in this repository and put them in `energytariff`-folder
 5.  Restart HA
 
 ### HACS(anbefalt)
-Inntil videre så må man legge til custom repository for å få installert denne via HACS
 
-1.  Start HACS
-2.  Gå til `Integrations` / `Integrasjoner`
-3.  Klikk på ... oppe i høyre hjørne, velg `Add custom repository` / `Tilpassede pakkelager`
-4.  I `Repository` / `Pakkelager` skriver man url til dette repoet
-    https://github.com/epaulsen/grid-energy-tariff-monitor
-5.  `Category` / `Kategori` skal være integrasjon
-6.  Trykk på `Add` / `Legg til`
+Go to HACS -> Integrations, click the blue + sign at the bottom right of the screen.
+Search for `EnergyTariff` and install it as any other HACS component.
 
-Integrasjonen skal nå bli listet opp som mulig å installere.  Installeres på samme måte som en hvilken som helst annen integrasjon.
 
-## Oppsett
+## Configuration
 
-Oppsettet av sensorene gjøres i yaml.
-Eksempel på oppsett i `configuration.yaml` :
+Configuration of this sensor is done in yaml.
+Minimal example: `configuration.yaml` :
 
 ```yaml
 sensor:
   - platform: energytariff
-    entity_id: "sensor.ams_power_sensor"
-    precision: 2
-    max_effect: 15900
-    levels:
-      - name: "Trinn 1: 0-2 kWh"
-        threshold: 2
-        price: 135
-      - name: "Trinn 2: 2-5 kWh"
-        threshold: 5
-        price: 170
-      - name: "Trinn 3: 5-10 kWh"
-        threshold: 10
-        price: 290
-      - name: "Trinn 4: 10-15 kWh"
-        threshold: 15
-        price: 600
-      - name: "Trinn 5: 15-20 kWh"
-        threshold: 20
-        price: 800
+    entity_id: "sensor.ams_power_sensor_watt"
+    target_energy: 10
 ```
 
-`entity_id` setter man til effektmåleren-entiteten man har på måleravleseren.
+### Configuration schema
 
-`precision` angir hvor mange desimaler sensorene skal ha.  Standard-verdi er 2, så dersom du utelater den vil sensorene ha 2 desimaler på måleverdiene.
+| Name | Type | Default | Since | Description |
+|------|------|---------|-------|-------------|
+| entity_id | string | **required** | v0.0.1 | entity_id for your AMS meter sensor that provides current power usage. |
+| precision | int | 2 | v0.0.1 | Number of decimals to use in rounding.  Defaults to 2, giving all sensors two decimals. |
+| target_energy | float | None | v0.0.1 | Target energy consumption in kWh.  See sensor "Available power this hour" for more detailed description. |
+| max_power | float | None | v0.0.1 | Max energy(in kWh) reported by "Available power this hour" sensor.See sensor "Available power this hour" for more detailed description. |
+| levels | list | None | v0.0.1 | Grid energy levels(primarily for norwegian HA users).  If your energy provider has tariffs based on energy consumption per hour, this list of levels can be utilized.
 
-`max_effect` er ikke påkrevd, men anbefales satt til maks effekt man kan trekke uten at hovedvernet i huset kobler ut.  Tallet man angir er i Watt.
-Sensoren `Available effect` regner ut hvor høy momentaneffekt man har tilgjengelig i resten av inneværende time, og vil de siste minuttene av timen bli veldig høye.
-Hvis man bruker denne sensoren til å bestemme om noe kan slås på, så har den potensiale til å slå på mer enn hovedvernet i huset tillater.
-Dersom `max_effect` er angitt og sensorens verdi overstiger `max_effect` så vil verdien for `max_effect` brukes.
-Max effect angis i Watt, og kan regnes ut slik:
+#### Levels schema
 
-```
-230-volt 1-fas: 230 * hovedsikring.  Eks med 50A hovedsikring: 230 * 50 = 11500 W
-230-volt 3-fas: 230 * hovedsikring * sqrt(3).  Eks med 40A hovedsikring: 230 * 40 * 1,732 = 15935 W
-400-volt 3-fas: 400 * hovedsikring * sqrt(3).  Eks med 40A hovedsikring: 400 * 40 * 1,732 = 27712 W
-```
+If your electric energy provider uses grid capacity levels, these can be configured.
+Per entry, here is the values needed:
 
-Hvis du ikke vet om du har 1-fas, 3-fas, 230 eller 400V, så spør en venn som er elektro-kyndig :)
+| Name | Type | Default | Since | Description |
+|------|------|---------|-------|-------------|
+| name | string | **required** | v0.0.1 | Name of grid energy level |
+| threshold | float | **required** | v0.0.1 | Energy threshold level, in kWh |
+| price | float | **required** | v0.0.1 | Energy level price |
 
+Levels example:
 
-Under `levels`, erstatt verdiene i  `name` , `threshold` og `price` med data for din nettleverandør(eksempeldata ovenfor er hentet fra Glitre Nett, tidl. Agder Energi nett)
+```yaml
 
-Etter å ha lagt til oppsettet så må HomeAssistant restartes for at sensorene skal vises.
-
-Dersom alt er riktig, gjort, så skal  man få opp sensorer som ligner på dette:
-
-![Example](./sensor_example.png)
-
-## Forklaring til sensorene
-
-### Generelle sensorer:
-
-**Grid Tariff Energy used this hour**
-
-  Dette er en enkel rienmann left sum basert på input sensor, som nullstiller seg for hver klokketime.
-  Input sensor i configuration.yaml må enten måle i W eller kW.  Sensoren angir forbruk i kWh for inneværende time.
-
-**Grid Tariff Energy estimate this hour**
-
-  Estimert forbruk denne timen.  Estimatet regnes ut etter formelen (Energi Brukt) + (MomentanEffekt * Antall sekunder igjen i time)
-  Eksempel:
-
-```
-  8 kWh brukt i løpet av de første 45 minuttene av timen.
-  5000 W momentaneffekt.
-  15 minutter er 900 sekund
-
-  8 + (5000 * 900 / 3600 / 1000) = 9,25 kWh i estimat for timen.
+levels:
+  - name: "Trinn 1: 0-2 kWh"
+    threshold: 2
+    price: 135
+  - name: "Trinn 2: 2-5 kWh"
+    threshold: 5
+    price: 170
 ```
 
-  Sensoren angir data i kWh.
 
-### Effekt-trinn sensorer:
+For a complete configuration example, see examples/full_config.yaml
 
-**NB!** Disse sensorene baserer seg på at effekt-trinn regnes ut av snittet for de tre timene med høyest forbruk på tre forskjellige dager.
-Inntil man har startet på dag 3 så vil nødvendigvis ikke disse sensorene gi riktige data.
-For dag en så vil effekt-trinn sensorene vises basert på høyeste time kun på dag 1.
-For dag to så vil effekt-trinn sensorene vises for snittet av dag 1 og 2.
-Fra og med første time på dag 3 så vil sensorene vise riktig verdi.
+## Sensors
 
-**Grid Tariff effect level threshold**
+This integration provides the following sensors:
 
-  Angir øvre terskelverdi basert på tre høyeste timer målt denne måneden, fra tre ulike dager.
-  Sensoren angir data i kWh.  Eksempel: Dersom du befinner deg på effekt-trinn 5-10 kWh, så vil sensoren angi 10kWh
+| Name | Unit | Description |
+|------|------|-------------|
+| Energy used this hour | kWh | Total amount of energy consumed this hour.  Resets to zero at the start of a new hour. |
+| Energy estimate this hour | kWh | Energy estimate this hour.  Based on energy consumption so far + current_power * remaining_seconds |
+| Available power this hour | W | How much power that can be used for the remaining part of hour and still remain within threshold limit, either configured in `target_energy` setting or at the configured grid level threshold(`level` threshold). |
+| Average peak hour energy | kWh | The highest hourly consumption, measured on three different days.  Used to calculate grid energy level.  Resets every month. |
 
-**Grid Tariff Effect level name**
+Additionally, if `levels` are configured, the following sensors are added:
 
-  Navn på effekt-trinn hentet fra konfigurasjonen.
+| Name | Unit | Description |
+|------|------|-------------|
+| Energy level name | string | Name of current energy level |
+| Energy level price | currency | Price of current energy level |
+| Energy level upper threshold | kWh | Upper energy threshold of current energy level |
+
+### Energy Used this hour
+
+This sensor displays how much energy that has been consumed so far this hour.  It will reset when a new hour starts.
+A typical graph for this sensor looks like this:
+
+![Example energy used](doc/energy_used_this_hour.png)
+
+### Energy estimate this hour
+
+This sensor gives an estimate of how much energy that will be consumed in the current hour.
+
+Given that `EC` is energy consumed, `EF` is current power and `TD` is remaining seconds of hour, calculation is done using this formula:
+$$Estimate = EC + {EF*TD\over3600*1000}$$
 
 
+Output is in kWh.  Sample sensor data:
 
-**Grid Tariff Effect level price**
+![Example energy used](doc/energy_estimate_this_hour.png)
 
-  Pris på nåværende effekt-trinn.  Angis i NOK
+### Available power this hour
+
+This sensor displays how much power you can use for the remaining part of current hour without exceeding configured threshold.  If `target_energy` is configured, this value is used as a threshold.  Otherwise, if `level` setting is configured, the current energy level threshold value is used.  If neither are configured, this sensor is unavailable
+
+Given that `EC` is energy consumed, `EF` is current power, `TT` is threshold and `TD` is remaining seconds of hour, calculation is done using this formula:
+$$Available = {({TT - EC})*3600*1000 \over TD} - EF$$
+
+If this sensor has a positive value, power usage can be increased without exceeding the threshold.  When the sensor has a negative value, power usage needs to be decreased in order to not exceed threshold.
+
+Sample graph from sensor.
+![Example energy used](doc/available_effect_this_hour.png)
+
+**max_power** parameter
+
+The last few minutes of an hour `TD` in the formula above will become quite low,
+resulting in available power to grow expontentially, and possibly exceeding the total available power that can be used without blowing the main circuit breaker.  It is highly recommended to set this parameter to a sensible value that is below the total power that can be utilized safely.
+
+### Energy level name
+This sensor provides the current energy step level for your average energy usage.  If `levels` are not configured, this sensor is not available.
+
+### Energy level threshold
+This sensor provides the upper threshold value for current energy level.
+If `levels` are not configured, this sensor is not available.
 
 
-**Grid Tariff Average peak hour effect**
+### Energy level price
+This sensor provides the price for the current energy level.
+If `levels` are not configured, this sensor is not available.
 
-  Snittet på de tre høyeste timer fra tre forskjellige dager målt denne måneden.
-
-**Grid Tariff Available effect this hour**
-
-  Angir maks momentaneffekt man kan bruke resten av timen og holde seg innenfor det effekt-trinnet man er på.
-  Sensoren har måleenhet på Watt.
-  Regnes ut slik: (Terskelverdi_trinn - Energi brukt) / ( Antall sekunder igjen i time) - Momentaneffekt
-  Eksempel:
-
-```
-    Effekttrinn 5-10 kWh.
-    8 kWh brukt de første 45 minutt av timen.
-    Momentaneffekt 5kW
-    Sensoren vil da regne ut hvor mange watt man kan trekke de siste 15 minutt(900 sekunder) av timen, minus
-    den momentaneffekten man allerede bruker.
-
-    (10000 - 8000) * 1000 * 3600 / 900 - 5000 = 3000
-
-    Sensoren vil angi at man resten av timen har 3000W effekt tilgjengelig i tillegg til det man allerede bruker.
-```
-Ett positivt tall på denne sensoren betyr at man kan forbruke mer effekt i gjenværende del av timen.
-
-Negativt tall her betyr at man vil gå over effekt-trinnet dersom man opprettholder forbruket.
 
 
 ## Contributions are welcome!

@@ -22,7 +22,7 @@ COORDINATOR = "rx_coordinator"
 
 
 DATA_UPDATED = f"{DOMAIN}_data_updated"
-MAX_EFFECT_ALLOWED = "max_effect"
+MAX_EFFECT_ALLOWED = "max_power"
 
 GRID_LEVELS = "levels"
 LEVEL_NAME = "name"
@@ -30,6 +30,7 @@ LEVEL_THRESHOLD = "threshold"
 LEVEL_PRICE = "price"
 ROUNDING_PRECISION = "precision"
 PEAK_HOUR = "peak_hour"
+TARGET_ENERGY = "target_energy"
 
 # Defaults
 DEFAULT_NAME = DOMAIN

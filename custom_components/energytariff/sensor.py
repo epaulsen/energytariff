@@ -43,6 +43,7 @@ from .const import (
     PEAK_HOUR,
     MAX_EFFECT_ALLOWED,
     ROUNDING_PRECISION,
+    TARGET_ENERGY,
 )
 
 from .coordinator import GridCapacityCoordinator, EnergyData, GridThresholdData
@@ -68,6 +69,7 @@ LEVEL_SCHEMA = vol.Schema(
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_EFFECT_ENTITY): cv.string,
+        vol.Optional(TARGET_ENERGY): cv.positive_float,
         vol.Optional(MAX_EFFECT_ALLOWED): cv.positive_float,
         vol.Optional(ROUNDING_PRECISION): cv.positive_int,
         vol.Optional(GRID_LEVELS): vol.All(cv.ensure_list, [LEVEL_SCHEMA]),
@@ -88,13 +90,18 @@ async def async_setup_platform(
         [
             GridCapWatcherEnergySensor(hass, config, rx_coord),
             GridCapWatcherEstimatedEnergySensor(hass, config, rx_coord),
-            GridCapWatcherCurrentEffectLevelThreshold(hass, config, rx_coord),
             GridCapWatcherAverageThreePeakHours(hass, config, rx_coord),
             GridCapWatcherAvailableEffectRemainingHour(hass, config, rx_coord),
-            GridCapacityWatcherCurrentLevelName(hass, config, rx_coord),
-            GridCapacityWatcherCurrentLevelPrice(hass, config, rx_coord),
         ]
     )
+    if config.get(GRID_LEVELS) is not None:
+        async_add_entities(
+            [
+                GridCapWatcherCurrentEffectLevelThreshold(hass, config, rx_coord),
+                GridCapacityWatcherCurrentLevelName(hass, config, rx_coord),
+                GridCapacityWatcherCurrentLevelPrice(hass, config, rx_coord),
+            ]
+        )
 
 
 class GridCapWatcherEnergySensor(RestoreSensor):
@@ -531,7 +538,7 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return "Average peak hour effect"
+        return "Average peak hour energy"
 
     @property
     def unique_id(self) -> str:
@@ -574,17 +581,19 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor, RestoreEntity):
         self._coordinator = rx_coord
         self._precision = get_rounding_precision(config)
         self._max_effect = config.get(MAX_EFFECT_ALLOWED)
+        self._target_energy = config.get(TARGET_ENERGY)
         self._sensor_value = None
-        self.attr = {"grid_threshold_level": None}
+        self.attr = {"grid_threshold_level": self._target_energy}
 
         self._attr_unique_id = (
             f"{DOMAIN}_{self._effect_sensor_id}_remaining_effect_available".replace(
                 "sensor.", ""
             )
         )
-        self._coordinator.thresholddata.subscribe(
-            lambda state: self._threshold_state_change(state)
-        )
+        if self._target_energy is None:
+            self._coordinator.thresholddata.subscribe(
+                lambda state: self._threshold_state_change(state)
+            )
 
         self._coordinator.effectstate.subscribe(
             lambda state: self._effect_state_change(state)
@@ -647,7 +656,7 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor, RestoreEntity):
     @property
     def name(self):
         """Return the name of the sensor."""
-        return "Available effect this hour"
+        return "Available power this hour"
 
     @property
     def unique_id(self) -> str:
