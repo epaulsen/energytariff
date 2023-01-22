@@ -1,6 +1,6 @@
 """Constants for grid-cap-watcher."""
 # Base component constants
-NAME = "Grid energy level monitor"
+NAME = "Energy tariff"
 DOMAIN = "energytariff"
 DOMAIN_DATA = f"{DOMAIN}_data"
 VERSION = "0.0.3"
@@ -29,7 +29,6 @@ LEVEL_NAME = "name"
 LEVEL_THRESHOLD = "threshold"
 LEVEL_PRICE = "price"
 ROUNDING_PRECISION = "precision"
-SENSOR_PREFIX = "Grid Tariff"
 PEAK_HOUR = "peak_hour"
 
 # Defaults

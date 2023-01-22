@@ -1,6 +1,6 @@
 {
   "domain": "energytariff",
-  "name": "Grid energy level tariff",
+  "name": "Energy tariff",
   "integration_type": "device",
   "documentation": "https://github.com/epaulsen/grid-energy-tariff-monitor",
   "issue_tracker": "https://github.com/epaulsen/grid-energy-tariff-monitor/issues",
