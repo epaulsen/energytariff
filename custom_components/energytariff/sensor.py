@@ -391,7 +391,7 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
         # Case 4: Not same day, list has three element.
         # If lowest level has lower consumption, replace element,
         # recalculate and return
-        self.attr["top_three"].sort(key=lambda x: x.energy)
+        self.attr["top_three"].sort(key=lambda x: x["energy"])
         for i in range(len(self.attr["top_three"])):
             if self.attr["top_three"][i]["energy"] < consumption["energy"]:
                 self.attr["top_three"][i] = consumption
