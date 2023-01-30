@@ -21,11 +21,13 @@ from homeassistant.const import (
 )
 
 from homeassistant.const import (
-    EVENT_STATE_CHANGED,
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
-
+from homeassistant.helpers.event import (
+    async_track_state_change,
+    async_track_point_in_time,
+)
 from homeassistant.helpers.typing import (
     ConfigType,
     DiscoveryInfoType,
@@ -51,7 +53,6 @@ from .coordinator import GridCapacityCoordinator, EnergyData, GridThresholdData
 from .utils import (
     start_of_next_hour,
     seconds_between,
-    start_of_current_hour,
     convert_to_watt,
     get_rounding_precision,
 )
@@ -120,6 +121,7 @@ class GridCapWatcherEnergySensor(RestoreSensor):
             CONF_EFFECT_ENTITY: self._effect_sensor_id,
             PEAK_HOUR: None,
         }
+        self._last_reading = None
         self._coordinator = rx_coord
         self._attr_icon: str = ICON
         self._energy_consumed = None
@@ -127,7 +129,13 @@ class GridCapWatcherEnergySensor(RestoreSensor):
             f"{DOMAIN}_{self._effect_sensor_id}_consumption_kWh".replace("sensor.", "")
         )
 
-        hass.bus.async_listen(EVENT_STATE_CHANGED, self.__handle_event)
+        self.__unsub = async_track_state_change(
+            hass, self._effect_sensor_id, self.__handle_event
+        )
+        async_track_point_in_time(
+            hass, self.__handle_reset, start_of_next_hour(dt.now())
+        )
+
 
     async def async_added_to_hass(self) -> None:
         """Call when entity about to be added to hass."""
@@ -136,69 +144,40 @@ class GridCapWatcherEnergySensor(RestoreSensor):
         if savedstate and savedstate.native_value is not None:
             self._energy_consumed = float(savedstate.native_value)
 
-    async def __handle_event(self, event):
-        if event.data["entity_id"] == self._effect_sensor_id:
+    async def async_will_remove_from_hass(self) -> None:
+        self.__unsub()
 
-            new_updated = event.data["new_state"].last_updated
-            new_value = convert_to_watt(event.data["new_state"])
+    async def __handle_reset(self, time):
+        _LOGGER.debug('Hourly reset')
+        self._energy_consumed = 0
+        await self.fire_event(self._last_reading, time)
+        self.async_schedule_update_ha_state(True)
+        async_track_point_in_time(self._hass, self.__handle_reset, start_of_next_hour(time))
 
-            if event.data["old_state"] is not None and event.data[
-                "old_state"
-            ].state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-                old_value = convert_to_watt(event.data["old_state"])
-                old_updated = self._last_update
+    async def __handle_event(self, entity, old_state, new_state):
 
-                if (
-                    self._energy_consumed not in (STATE_UNKNOWN, STATE_UNAVAILABLE)
-                    and self._energy_consumed is not None
-                ):
-                    current_state = self._energy_consumed
-                else:
-                    current_state = 0
+        if new_state is None or old_state is None:
+            return
+        if new_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            return
+        if old_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            return
 
-                # Crossing hour threshold.  Reset energy counter
-                if old_updated.hour != new_updated.hour:
+        self._last_reading = convert_to_watt(new_state)
 
-                    _LOGGER.debug("New hour: %s", new_updated)
+        diff = seconds_between(new_state.last_updated, old_state.last_updated)
+        watt = convert_to_watt(old_state)
+        self._energy_consumed += round(
+             (diff * watt) / (3600 * 1000),
+             self._precision)
+        await self.fire_event(watt, old_state.last_updated)
+        self.async_schedule_update_ha_state(True)
 
-                    cutoff = start_of_current_hour(new_updated)
-
-                    # Calculate energy for last update on old hour first
-                    diff = (cutoff - old_updated).total_seconds()
-                    if diff > 0:
-                        watt_seconds = old_value * diff
-                        self._energy_consumed = round(
-                            current_state + watt_seconds / 3600 / 1000, 2
-                        )  # Output is kWh
-
-                    # Fire HA event so that sensor which holds current capacity level info can update
-                    await self.fire_event(new_value, old_updated)
-
-                    # Set diff so that we calculate from first second of hour for remaining value
-                    diff = (new_updated - cutoff).total_seconds()
-
-                    # Set energy to zero, as we are starting a new hour
-                    current_state = 0
-                else:
-                    diff = seconds_between(new_updated, old_updated)
-
-                # Calculate watt-seconds
-                if diff > 0:
-                    watt_seconds = old_value * diff
-                    self._energy_consumed = round(
-                        current_state + watt_seconds / 3600 / 1000, self._precision
-                    )  # Output is kWh
-                    self.async_schedule_update_ha_state(True)
-
-                    # Fire HA event so that other sensors can be updated
-                    await self.fire_event(new_value, new_updated)
-            self._last_update = new_updated
-
-    async def fire_event(self, effect: float, timestamp: datetime) -> bool:
+    async def fire_event(self, power: float, timestamp: datetime) -> bool:
         """Fire HA event so that dependent sensors can update their respective values"""
 
         self._coordinator.effectstate.on_next(
-            EnergyData(self._energy_consumed, effect, timestamp)
+            EnergyData(self._energy_consumed, power, timestamp)
         )
         return True
 
