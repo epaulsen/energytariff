@@ -136,7 +136,6 @@ class GridCapWatcherEnergySensor(RestoreSensor):
             hass, self.__handle_reset, start_of_next_hour(dt.now())
         )
 
-
     async def async_added_to_hass(self) -> None:
         """Call when entity about to be added to hass."""
         await super().async_added_to_hass()
@@ -148,11 +147,13 @@ class GridCapWatcherEnergySensor(RestoreSensor):
         self.__unsub()
 
     async def __handle_reset(self, time):
-        _LOGGER.debug('Hourly reset')
+        _LOGGER.debug("Hourly reset")
         self._energy_consumed = 0
         await self.fire_event(self._last_reading, time)
         self.async_schedule_update_ha_state(True)
-        async_track_point_in_time(self._hass, self.__handle_reset, start_of_next_hour(time))
+        async_track_point_in_time(
+            self._hass, self.__handle_reset, start_of_next_hour(time)
+        )
 
     async def __handle_event(self, entity, old_state, new_state):
 
@@ -167,9 +168,11 @@ class GridCapWatcherEnergySensor(RestoreSensor):
 
         diff = seconds_between(new_state.last_updated, old_state.last_updated)
         watt = convert_to_watt(old_state)
-        self._energy_consumed += round(
-             (diff * watt) / (3600 * 1000),
-             self._precision)
+
+        self._energy_consumed = round(
+            self._energy_consumed + ((diff * watt) / (3600 * 1000)), self._precision
+        )
+
         await self.fire_event(watt, old_state.last_updated)
         self.async_schedule_update_ha_state(True)
 
@@ -236,6 +239,10 @@ class GridCapWatcherEstimatedEnergySensor(SensorEntity):
     def _state_change(self, state: EnergyData):
         if state is None:
             return
+
+        if state.energy_consumed is None or state.current_effect is None:
+            return
+
         self._consumption = state.energy_consumed
         self._current_effect = state.current_effect
         update_time = state.timestamp
