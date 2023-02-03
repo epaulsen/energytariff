@@ -2,7 +2,7 @@
 from logging import getLogger
 from datetime import datetime
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 import voluptuous as vol
 from homeassistant.util import dt
 import homeassistant.helpers.config_validation as cv
@@ -82,7 +82,7 @@ async def async_setup_platform(
     hass: HomeAssistantType,
     config: ConfigType,
     async_add_entities: Callable,
-    discovery_info: Optional[DiscoveryInfoType] = None,
+    _,
 ) -> None:
     """Setup sensor platform."""
 
@@ -155,7 +155,7 @@ class GridCapWatcherEnergySensor(RestoreSensor):
             self._hass, self.__handle_reset, start_of_next_hour(time)
         )
 
-    async def __handle_event(self, entity, old_state, new_state):
+    async def __handle_event(self, _, old_state, new_state):
 
         if new_state is None or old_state is None:
             return
@@ -164,10 +164,16 @@ class GridCapWatcherEnergySensor(RestoreSensor):
         if old_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
             return
 
+        if self._energy_consumed is None:
+            self._energy_consumed = 0
+
         self._last_reading = convert_to_watt(new_state)
 
         diff = seconds_between(new_state.last_updated, old_state.last_updated)
         watt = convert_to_watt(old_state)
+        if diff > 3600:
+            _LOGGER.warning("More than 1 hour since last update, discarding result")
+            return
 
         self._energy_consumed = round(
             self._energy_consumed + ((diff * watt) / (3600 * 1000)), self._precision
@@ -234,7 +240,7 @@ class GridCapWatcherEstimatedEnergySensor(SensorEntity):
             )
         )
 
-        self._coordinator.effectstate.subscribe(lambda state: self._state_change(state))
+        self._coordinator.effectstate.subscribe(self._state_change)
 
     def _state_change(self, state: EnergyData):
         if state is None:
@@ -310,7 +316,7 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
 
         self._levels = config.get(GRID_LEVELS)
 
-        self._coordinator.effectstate.subscribe(lambda state: self._state_change(state))
+        self._coordinator.effectstate.subscribe(self._state_change)
 
     async def async_added_to_hass(self) -> None:
         """Call when entity about to be added to hass."""
@@ -328,8 +334,9 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
                             "energy": item["energy"],
                         }
                     )
+                self.calculate_level()
 
-    def _state_change(self, state: EnergyData):
+    def _state_change(self, state: EnergyData) -> None:
 
         if state is None:
             return
@@ -355,22 +362,30 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
 
         # Case 1:Empty list. Uncricitally add, calculate level and return
         if len(self.attr["top_three"]) == 0:
+            _LOGGER.debug("Adding first item")
             self.attr["top_three"].append(consumption)
             self.calculate_level()
             return
 
-        # Case 2: Same day.  If higher energy usage,  update entry, calculate and return
+        # Case 2: Items in list.  If any are same day as consumption-item,
+        # update that one if energy is higher.  Recalculate and return
         for i in range(len(self.attr["top_three"])):
             if self.attr["top_three"][i]["day"] == consumption["day"]:
                 if self.attr["top_three"][i]["energy"] < consumption["energy"]:
-                    self.attr["top_three"][i] = consumption
+                    self.attr["top_three"][i]["energy"] = consumption["energy"]
+                    self.attr["top_three"][i]["hour"] = consumption["hour"]
+                    _LOGGER.debug(
+                        "Updating current-day item to %s", consumption["energy"]
+                    )
                     self.calculate_level()
                 return
 
-        # Case 3: We are not on the same day, but have less than 3 items in list.
+        # Case 3: We are not on the same day as any items in the list,
+        # but have less than 3 items in list.
         # Add, re-calculate and return
         if len(self.attr["top_three"]) < 3:
             self.attr["top_three"].append(consumption)
+            _LOGGER.debug("Adding new item")
             self.calculate_level()
             return
 
@@ -380,6 +395,7 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
         self.attr["top_three"].sort(key=lambda x: x["energy"])
         for i in range(len(self.attr["top_three"])):
             if self.attr["top_three"][i]["energy"] < consumption["energy"]:
+                _LOGGER.debug("Updating item %s", i)
                 self.attr["top_three"][i] = consumption
                 self.calculate_level()
                 return
@@ -397,12 +413,8 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
 
         if found_threshold is not None:
 
-            if (
-                self._sensor_value is None
-                or self._sensor_value - found_threshold["threshold"] != 0
-            ):
-                self._sensor_value = found_threshold["threshold"]
-                self.schedule_update_ha_state()
+            self._sensor_value = found_threshold["threshold"]
+            self.schedule_update_ha_state(True)
 
             # Notify other sensors that threshold level has been updated
             self._coordinator.thresholddata.on_next(
@@ -422,7 +434,7 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
             if average - level["threshold"] < 0:
                 return level
 
-        _LOGGER.error(
+        _LOGGER.warning(
             "Hourly energy is outside capacity level steps.  Check configuration!"
         )
         return None
@@ -480,9 +492,7 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
 
         self._levels = config.get(GRID_LEVELS)
 
-        self._coordinator.thresholddata.subscribe(
-            lambda state: self._state_change(state)
-        )
+        self._coordinator.thresholddata.subscribe(self._state_change)
 
     async def async_added_to_hass(self) -> None:
         """Call when entity about to be added to hass."""
@@ -576,14 +586,9 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor, RestoreEntity):
                 "sensor.", ""
             )
         )
-        if self._target_energy is None:
-            self._coordinator.thresholddata.subscribe(
-                lambda state: self._threshold_state_change(state)
-            )
 
-        self._coordinator.effectstate.subscribe(
-            lambda state: self._effect_state_change(state)
-        )
+        self._coordinator.thresholddata.subscribe(self._threshold_state_change)
+        self._coordinator.effectstate.subscribe(self._effect_state_change)
 
     async def async_added_to_hass(self) -> None:
         """Call when entity about to be added to hass."""
@@ -614,11 +619,19 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor, RestoreEntity):
         if (
             self._energy is None
             or self._effect is None
-            or self.attr["grid_threshold_level"] is None
+            or (
+                self.attr["grid_threshold_level"] is None
+                and self._target_energy is None
+            )
         ):
             return
 
-        remaining_kwh = self.attr["grid_threshold_level"] - self._energy
+        if self._target_energy is None:
+            threshold_energy = float(self.attr["grid_threshold_level"])
+        else:
+            threshold_energy = float(self._target_energy)
+
+        remaining_kwh = threshold_energy - self._energy
 
         seconds_remaing = seconds_between(start_of_next_hour(dt.now()), dt.now())
 
@@ -627,14 +640,23 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor, RestoreEntity):
 
         watt_seconds = remaining_kwh * 3600 * 1000
 
-        effect = round(watt_seconds / seconds_remaing - self._effect, self._precision)
+        power = round(watt_seconds / seconds_remaing - self._effect, self._precision)
 
-        if self._max_effect is not None and float(self._max_effect) < effect:
+        if self._max_effect is not None and float(self._max_effect) < power:
             # Max effect threshold exceeded,
             # we should display max_effect - current_effect from meter
-            effect = float(self._max_effect) - self._effect
+            power = float(self._max_effect) - self._effect
 
-        self._sensor_value = effect
+        if (
+            self._max_effect is not None
+            and power < 0
+            and float(self._max_effect) * -1 > power
+        ):
+            # Do not exceed threshold in negative direction either.
+            # Purely cosmetic, but it messes up scale on graph.
+            power = float(self._max_effect) * -1
+
+        self._sensor_value = power
         self.schedule_update_ha_state(True)
 
         return True
@@ -681,9 +703,7 @@ class GridCapacityWatcherCurrentLevelName(RestoreSensor):
         self._sensor_value = None
         self._levels = config.get(GRID_LEVELS)
         self._attr_unique_id = f"{DOMAIN}_effect_level_name".replace("sensor.", "")
-        self._coordinator.thresholddata.subscribe(
-            lambda state: self._threshold_state_change(state)
-        )
+        self._coordinator.thresholddata.subscribe(self._threshold_state_change)
 
     def _threshold_state_change(self, state: GridThresholdData):
         if state is None:
@@ -740,9 +760,7 @@ class GridCapacityWatcherCurrentLevelPrice(RestoreSensor):
         self._sensor_value = None
         self._levels = config.get(GRID_LEVELS)
         self._attr_unique_id = f"{DOMAIN}_effect_level_price".replace("sensor.", "")
-        self._coordinator.thresholddata.subscribe(
-            lambda state: self._threshold_state_change(state)
-        )
+        self._coordinator.thresholddata.subscribe(self._threshold_state_change)
 
     def _threshold_state_change(self, state: GridThresholdData):
         if state is None:
