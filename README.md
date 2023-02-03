@@ -31,10 +31,14 @@ This sensor can either be installed manually, or via HACS(recommended)
 ### HACS(recommended)
 
 Until hacs/default#1720 is fully merged, you will need to add this repository as a custom repository in
-order to install this.
+order to install this.  
+Go to HACS, integrations, click the three dots in the upper right corner (...) 
+Click add
+Enter url for this repository https://github.com/epaulsen/energytariff and select "Integration" as category.
 
 Go to HACS -> Integrations, click the blue + sign at the bottom right of the screen.
-Search for `EnergyTariff` and install it as any other HACS component.
+Search for `EnergyTariff` and install it as any other HACS component.  
+A HA restart is required before configuration for HomeAssistant to pick up the new integration.
 
 
 ## Configuration
