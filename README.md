@@ -1,12 +1,20 @@
-# EnergyTariff
+![Logo](doc/logo.png)
 
-![Sensors example](doc/sensors.png)
+[![hacs_badge]](https://github.com/hacs/integration)
+![analytics_badge]
+[![GitHub Activity][commits-shield]][commits]
+[![License][license-shield]](LICENSE)
+[![BuyMeCoffee][buymecoffeebadge]][buymecoffee]
 
 ## Description
 
 This integration adds a platform entity that provides sensors to monitor energy consumption.
 In order to use this in a meaningful way, a meter reader for the total power usage of the HA installation is needed,
 typically this means that you have a meter reader installed on your AMS meter.
+
+This integration was written as a stopgap for missing sensors after moving away from Tibber.  It provides similar sensors
+as what you can get from their HA integration and from their GraphQl API.  If you want to ensure that you do not exceed
+a grip energy step level, this integration will provide you with the tools to succeed.
 
 ## Installation
 
@@ -21,6 +29,9 @@ This sensor can either be installed manually, or via HACS(recommended)
 5.  Restart HA
 
 ### HACS(recommended)
+
+Until hacs/default#1720 is fully merged, you will need to add this repository as a custom repository in
+order to install this.
 
 Go to HACS -> Integrations, click the blue + sign at the bottom right of the screen.
 Search for `EnergyTariff` and install it as any other HACS component.
@@ -142,7 +153,7 @@ As sensor data from three different days are needed in order to calculate grid l
 This sensor displays the average of the three hours with highest energy usage, from three different days.
 Value is reset when a new month starts.
 
-**NOTE** Sensor will not work properly until it it has two full days of data + 1 hour from day 3.  
+**NOTE** Sensor will not work properly until it it has two full days of data + 1 hour from day 3.
 For the first day after month start, it will display the highest consumption that is measured for an individual hour.
 On day two, it will measure an anverage of highest consumption from day 1 and 2.  On day three the sensor will provide correct values, measuring the average of the three highest hours from three different days.
 
@@ -161,3 +172,11 @@ If `levels` are not configured, this sensor is not available.
 ## Contributions are welcome!
 
 If you want to contribute to this please read the [Contribution guidelines](CONTRIBUTING.md)
+
+[buymecoffee]: https://www.buymeacoffee.com/epaulsen
+[buymecoffeebadge]: https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg?style=flat
+[commits-shield]: https://img.shields.io/github/commit-activity/y/epaulsen/energytariff
+[commits]: https://github.com/epaulsen/energytariff/commits/master
+[hacs_badge]: https://img.shields.io/badge/HACS-Default-41BDF5.svg
+[license-shield]: https://img.shields.io/github/license/epaulsen/energytariff
+[analytics_badge]: https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=integration%20usage&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.energytariff.total
