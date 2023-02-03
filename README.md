@@ -66,7 +66,7 @@ sensor:
 
 #### Levels schema
 
-If your electric energy provider uses grid capacity levels, these can be configured.
+If your electric energy provider uses grid capacity levels, these can be configured by adding this section to configuration.
 These tariff levels are used by norwegian grid operators, so this primarily applies to Norwegian HA owners.
 Per entry, here are the values needed:
 
@@ -89,7 +89,7 @@ levels:
     price: 170
 ```
 
-For a complete configuration example, see [full example](examples/full.yaml)
+For a complete configuration example with all properties, see [full example](examples/full.yaml)
 
 ## Sensors
 
