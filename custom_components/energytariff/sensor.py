@@ -30,7 +30,6 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.helpers.typing import (
     ConfigType,
-    DiscoveryInfoType,
     HomeAssistantType,
 )
 
@@ -117,14 +116,9 @@ class GridCapWatcherEnergySensor(RestoreSensor):
         self._effect_sensor_id = config.get(CONF_EFFECT_ENTITY)
         self._precision = get_rounding_precision(config)
         self._last_update = None
-        self.attr = {
-            CONF_EFFECT_ENTITY: self._effect_sensor_id,
-            PEAK_HOUR: None,
-        }
-        self._last_reading = None
         self._coordinator = rx_coord
         self._attr_icon: str = ICON
-        self._energy_consumed = None
+        self._state = None
         self._attr_unique_id = (
             f"{DOMAIN}_{self._effect_sensor_id}_consumption_kWh".replace("sensor.", "")
         )
@@ -141,15 +135,14 @@ class GridCapWatcherEnergySensor(RestoreSensor):
         await super().async_added_to_hass()
         savedstate = await self.async_get_last_sensor_data()
         if savedstate and savedstate.native_value is not None:
-            self._energy_consumed = float(savedstate.native_value)
+            self._state = float(savedstate.native_value)
 
     async def async_will_remove_from_hass(self) -> None:
         self.__unsub()
 
     async def __handle_reset(self, time):
         _LOGGER.debug("Hourly reset")
-        self._energy_consumed = 0
-        await self.fire_event(self._last_reading, time)
+        self._state = 0
         self.async_schedule_update_ha_state(True)
         async_track_point_in_time(
             self._hass, self.__handle_reset, start_of_next_hour(time)
@@ -164,10 +157,8 @@ class GridCapWatcherEnergySensor(RestoreSensor):
         if old_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
             return
 
-        if self._energy_consumed is None:
-            self._energy_consumed = 0
-
-        self._last_reading = convert_to_watt(new_state)
+        if self._state is None:
+            self._state = 0
 
         diff = seconds_between(new_state.last_updated, old_state.last_updated)
         watt = convert_to_watt(old_state)
@@ -175,19 +166,14 @@ class GridCapWatcherEnergySensor(RestoreSensor):
             _LOGGER.warning("More than 1 hour since last update, discarding result")
             return
 
-        self._energy_consumed = round(
-            self._energy_consumed + ((diff * watt) / (3600 * 1000)), self._precision
-        )
-
+        self._state += (diff * watt) / (3600 * 1000)
         await self.fire_event(watt, old_state.last_updated)
         self.async_schedule_update_ha_state(True)
 
     async def fire_event(self, power: float, timestamp: datetime) -> bool:
         """Fire HA event so that dependent sensors can update their respective values"""
 
-        self._coordinator.effectstate.on_next(
-            EnergyData(self._energy_consumed, power, timestamp)
-        )
+        self._coordinator.effectstate.on_next(EnergyData(self._state, power, timestamp))
         return True
 
     @property
@@ -207,16 +193,14 @@ class GridCapWatcherEnergySensor(RestoreSensor):
 
     @property
     def native_value(self):
-        return self._energy_consumed
+        if not self._state is None:
+            return round(self._state, self._precision)
+        return self._state
 
     @property
     def icon(self):
         """Return the icon of the sensor."""
         return ICON
-
-    @property
-    def extra_state_attributes(self):
-        return self.attr
 
 
 class GridCapWatcherEstimatedEnergySensor(SensorEntity):
@@ -231,9 +215,7 @@ class GridCapWatcherEstimatedEnergySensor(SensorEntity):
         self._effect_sensor_id = config.get(CONF_EFFECT_ENTITY)
         self._coordinator = rx_coord
         self._precision = get_rounding_precision(config)
-        self._current_effect = None
-        self._consumption = None
-        self._sensor_value = None
+        self._state = None
         self._attr_unique_id = (
             f"{DOMAIN}_{self._effect_sensor_id}_consumption_estimate_kWh".replace(
                 "sensor.", ""
@@ -249,8 +231,8 @@ class GridCapWatcherEstimatedEnergySensor(SensorEntity):
         if state.energy_consumed is None or state.current_effect is None:
             return
 
-        self._consumption = state.energy_consumed
-        self._current_effect = state.current_effect
+        energy = state.energy_consumed
+        power = state.current_effect
         update_time = state.timestamp
 
         remaining_seconds = seconds_between(
@@ -261,10 +243,7 @@ class GridCapWatcherEstimatedEnergySensor(SensorEntity):
             # Avoid division by zero
             remaining_seconds = 1
 
-        self._sensor_value = round(
-            self._consumption + self._current_effect * remaining_seconds / 3600 / 1000,
-            self._precision,
-        )
+        self._state = energy + power * remaining_seconds / 3600 / 1000
         self.schedule_update_ha_state()
 
     @property
@@ -285,7 +264,9 @@ class GridCapWatcherEstimatedEnergySensor(SensorEntity):
     @property
     def native_value(self):
         """Returns the native value for this sensor"""
-        return self._sensor_value
+        if self._state is not None:
+            return round(self._state, self._precision)
+        return self._state
 
     @property
     def icon(self):
@@ -304,7 +285,7 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
         self._hass = hass
         self._effect_sensor_id = config.get(CONF_EFFECT_ENTITY)
         self._coordinator = rx_coord
-        self._sensor_value = None
+        self._state = None
         self._last_update = dt.now()
         self._attr_unique_id = (
             f"{DOMAIN}_{self._effect_sensor_id}_grid_effect_threshold_kwh".replace(
@@ -324,7 +305,7 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
         savedstate = await self.async_get_last_state()
         if savedstate:
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-                self._sensor_value = float(savedstate.state)
+                self._state = float(savedstate.state)
             if "top_three" in savedstate.attributes:
                 for item in savedstate.attributes["top_three"]:
                     self.attr["top_three"].append(
@@ -350,7 +331,7 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
             _LOGGER.debug("New month: %s", timestamp)
             # New month, so reset top_three list and sensor value
             self.attr["top_three"].clear()
-            self._sensor_value = None
+            self._state = None
 
         self._last_update = timestamp
 
@@ -407,13 +388,13 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
         for hour in self.attr["top_three"]:
             average_value += hour["energy"]
 
-        average_value = round(average_value / len(self.attr["top_three"]), 2)
+        average_value = average_value / len(self.attr["top_three"])
 
         found_threshold = self.get_level(average_value)
 
         if found_threshold is not None:
 
-            self._sensor_value = found_threshold["threshold"]
+            self._state = found_threshold["threshold"]
             self.schedule_update_ha_state(True)
 
             # Notify other sensors that threshold level has been updated
@@ -452,12 +433,12 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self._sensor_value is not None
+        return self._state is not None
 
     @property
     def native_value(self):
         """Returns the native value for this sensor"""
-        return self._sensor_value
+        return self._state
 
     @property
     def icon(self):
@@ -481,7 +462,7 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
         self._effect_sensor_id = config.get(CONF_EFFECT_ENTITY)
         self._coordinator = rx_coord
         self._precision = get_rounding_precision(config)
-        self._sensor_value = None
+        self._state = None
         self._attr_unique_id = (
             f"{DOMAIN}_{self._effect_sensor_id}_grid_three_peak_hours_average".replace(
                 "sensor.", ""
@@ -500,7 +481,7 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
         savedstate = await self.async_get_last_state()
         if savedstate:
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-                self._sensor_value = float(savedstate.state)
+                self._state = float(savedstate.state)
             if "top_three" in savedstate.attributes:
                 for item in savedstate.attributes["top_three"]:
                     self.attr["top_three"].append(
@@ -519,15 +500,11 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
 
     def calculate_sensor(self) -> bool:
         """Calculate the grid threshold level based on average of the highest hours"""
-        average_value = 0.0
+        sum = 0.0
         for hour in self.attr["top_three"]:
-            average_value += hour["energy"]
+            sum += hour["energy"]
 
-        average_value = round(
-            average_value / len(self.attr["top_three"]), self._precision
-        )
-
-        self._sensor_value = round(average_value, self._precision)
+        self._state = sum / len(self.attr["top_three"])
         self.schedule_update_ha_state(True)
         return True
 
@@ -544,12 +521,14 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self._sensor_value is not None
+        return self._state is not None
 
     @property
     def native_value(self):
         """Returns the native value for this sensor"""
-        return self._sensor_value
+        if self._state is not None:
+            return round(self._state, self._precision)
+        return self._state
 
     @property
     def icon(self):
@@ -578,7 +557,7 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor, RestoreEntity):
         self._precision = get_rounding_precision(config)
         self._max_effect = config.get(MAX_EFFECT_ALLOWED)
         self._target_energy = config.get(TARGET_ENERGY)
-        self._sensor_value = None
+        self._state = None
         self.attr = {"grid_threshold_level": self._target_energy}
 
         self._attr_unique_id = (
@@ -596,7 +575,7 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor, RestoreEntity):
         savedstate = await self.async_get_last_state()
         if savedstate:
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-                self._sensor_value = float(savedstate.state)
+                self._state = float(savedstate.state)
             if "grid_threshold_level" in savedstate.attributes:
                 self.attr["grid_threshold_level"] = savedstate.attributes[
                     "grid_threshold_level"
@@ -640,7 +619,7 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor, RestoreEntity):
 
         watt_seconds = remaining_kwh * 3600 * 1000
 
-        power = round(watt_seconds / seconds_remaing - self._effect, self._precision)
+        power = watt_seconds / seconds_remaing - self._effect
 
         if self._max_effect is not None and float(self._max_effect) < power:
             # Max effect threshold exceeded,
@@ -656,7 +635,7 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor, RestoreEntity):
             # Purely cosmetic, but it messes up scale on graph.
             power = float(self._max_effect) * -1
 
-        self._sensor_value = power
+        self._state = power
         self.schedule_update_ha_state(True)
 
         return True
@@ -674,12 +653,14 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor, RestoreEntity):
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self._sensor_value is not None
+        return self._state is not None
 
     @property
     def native_value(self):
         """Returns the native value for this sensor"""
-        return self._sensor_value
+        if self._state is not None:
+            return round(self._state, self._precision)
+        return self._state
 
     @property
     def icon(self):
@@ -700,7 +681,7 @@ class GridCapacityWatcherCurrentLevelName(RestoreSensor):
     def __init__(self, hass, config, rx_coord: GridCapacityCoordinator):
         self._coordinator = rx_coord
         self._hass = hass
-        self._sensor_value = None
+        self._state = None
         self._levels = config.get(GRID_LEVELS)
         self._attr_unique_id = f"{DOMAIN}_effect_level_name".replace("sensor.", "")
         self._coordinator.thresholddata.subscribe(self._threshold_state_change)
@@ -708,7 +689,7 @@ class GridCapacityWatcherCurrentLevelName(RestoreSensor):
     def _threshold_state_change(self, state: GridThresholdData):
         if state is None:
             return
-        self._sensor_value = state.name
+        self._state = state.name
         self.schedule_update_ha_state(True)
 
     async def async_added_to_hass(self) -> None:
@@ -717,7 +698,7 @@ class GridCapacityWatcherCurrentLevelName(RestoreSensor):
         savedstate = await self.async_get_last_state()
         if savedstate:
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-                self._sensor_value = savedstate.state
+                self._state = savedstate.state
 
     @property
     def name(self):
@@ -732,12 +713,12 @@ class GridCapacityWatcherCurrentLevelName(RestoreSensor):
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self._sensor_value is not None
+        return self._state is not None
 
     @property
     def native_value(self):
         """Returns the native value for this sensor"""
-        return self._sensor_value
+        return self._state
 
     @property
     def icon(self):
@@ -757,7 +738,7 @@ class GridCapacityWatcherCurrentLevelPrice(RestoreSensor):
     def __init__(self, hass, config, rx_coord: GridCapacityCoordinator):
         self._coordinator = rx_coord
         self._hass = hass
-        self._sensor_value = None
+        self._state = None
         self._levels = config.get(GRID_LEVELS)
         self._attr_unique_id = f"{DOMAIN}_effect_level_price".replace("sensor.", "")
         self._coordinator.thresholddata.subscribe(self._threshold_state_change)
@@ -765,7 +746,7 @@ class GridCapacityWatcherCurrentLevelPrice(RestoreSensor):
     def _threshold_state_change(self, state: GridThresholdData):
         if state is None:
             return
-        self._sensor_value = state.price
+        self._state = state.price
         self.schedule_update_ha_state(True)
 
     async def async_added_to_hass(self) -> None:
@@ -774,7 +755,7 @@ class GridCapacityWatcherCurrentLevelPrice(RestoreSensor):
         savedstate = await self.async_get_last_state()
         if savedstate:
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
-                self._sensor_value = savedstate.state
+                self._state = savedstate.state
 
     @property
     def name(self):
@@ -789,12 +770,12 @@ class GridCapacityWatcherCurrentLevelPrice(RestoreSensor):
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
-        return self._sensor_value is not None
+        return self._state is not None
 
     @property
     def native_value(self):
         """Returns the native value for this sensor"""
-        return self._sensor_value
+        return self._state
 
     @property
     def icon(self):
