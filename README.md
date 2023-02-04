@@ -31,10 +31,15 @@ This sensor can either be installed manually, or via HACS(recommended)
 ### HACS(recommended)
 
 Until hacs/default#1720 is fully merged, you will need to add this repository as a custom repository in
-order to install this.
+order to install this.  
+Go to HACS, integrations, click the three dots in the upper right corner (...) 
+Click add.
+Enter url for this repository https://github.com/epaulsen/energytariff and select "Integration" as category.
+Click "Add" at the bottom of the dialogbox.
 
 Go to HACS -> Integrations, click the blue + sign at the bottom right of the screen.
-Search for `EnergyTariff` and install it as any other HACS component.
+Search for `EnergyTariff` and install it as any other HACS component.  
+A HA restart is required before configuration for HomeAssistant to pick up the new integration.
 
 
 ## Configuration
@@ -61,7 +66,7 @@ sensor:
 
 #### Levels schema
 
-If your electric energy provider uses grid capacity levels, these can be configured.
+If your electric energy provider uses grid capacity levels, these can be configured by adding this section to configuration.
 These tariff levels are used by norwegian grid operators, so this primarily applies to Norwegian HA owners.
 Per entry, here are the values needed:
 
@@ -84,7 +89,7 @@ levels:
     price: 170
 ```
 
-For a complete configuration example, see [full example](examples/full.yaml)
+For a complete configuration example with all properties, see [full example](examples/full.yaml)
 
 ## Sensors
 
