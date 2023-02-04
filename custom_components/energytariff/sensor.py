@@ -6,6 +6,7 @@ from typing import Any, Callable
 import voluptuous as vol
 from homeassistant.util import dt
 import homeassistant.helpers.config_validation as cv
+from homeassistant.core import callback
 
 from homeassistant.components.sensor import (
     SensorStateClass,
@@ -41,7 +42,6 @@ from .const import (
     LEVEL_THRESHOLD,
     LEVEL_PRICE,
     GRID_LEVELS,
-    PEAK_HOUR,
     MAX_EFFECT_ALLOWED,
     ROUNDING_PRECISION,
     TARGET_ENERGY,
@@ -123,12 +123,13 @@ class GridCapWatcherEnergySensor(RestoreSensor):
             f"{DOMAIN}_{self._effect_sensor_id}_consumption_kWh".replace("sensor.", "")
         )
 
+        # Listen to input sensor state change event
         self.__unsub = async_track_state_change(
-            hass, self._effect_sensor_id, self.__handle_event
+            hass, self._effect_sensor_id, self.handle_sensor_change
         )
-        async_track_point_in_time(
-            hass, self.__handle_reset, start_of_next_hour(dt.now())
-        )
+
+        # Setup hourly sensor reset.
+        async_track_point_in_time(hass, self.hourly_reset, start_of_next_hour(dt.now()))
 
     async def async_added_to_hass(self) -> None:
         """Call when entity about to be added to hass."""
@@ -140,15 +141,20 @@ class GridCapWatcherEnergySensor(RestoreSensor):
     async def async_will_remove_from_hass(self) -> None:
         self.__unsub()
 
-    async def __handle_reset(self, time):
+    @callback
+    def hourly_reset(self, time):
+        """Callback that HA invokes at the start of each hour to reset this sensor value"""
+
         _LOGGER.debug("Hourly reset")
         self._state = 0
         self.async_schedule_update_ha_state(True)
         async_track_point_in_time(
-            self._hass, self.__handle_reset, start_of_next_hour(time)
+            self._hass, self.hourly_reset, start_of_next_hour(time)
         )
 
-    async def __handle_event(self, _, old_state, new_state):
+    @callback
+    def handle_sensor_change(self, _, old_state, new_state):
+        """Callback for when the AMS sensor changes"""
 
         if new_state is None or old_state is None:
             return
@@ -167,10 +173,10 @@ class GridCapWatcherEnergySensor(RestoreSensor):
             return
 
         self._state += (diff * watt) / (3600 * 1000)
-        await self.fire_event(watt, old_state.last_updated)
+        self.fire_event(watt, old_state.last_updated)
         self.async_schedule_update_ha_state(True)
 
-    async def fire_event(self, power: float, timestamp: datetime) -> bool:
+    def fire_event(self, power: float, timestamp: datetime) -> bool:
         """Fire HA event so that dependent sensors can update their respective values"""
 
         self._coordinator.effectstate.on_next(EnergyData(self._state, power, timestamp))
