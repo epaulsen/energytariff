@@ -31,14 +31,14 @@ This sensor can either be installed manually, or via HACS(recommended)
 ### HACS(recommended)
 
 Until hacs/default#1720 is fully merged, you will need to add this repository as a custom repository in
-order to install this.  
-Go to HACS, integrations, click the three dots in the upper right corner (...) 
+order to install this.
+Go to HACS, integrations, click the three dots in the upper right corner (...)
 Click add.
 Enter url for this repository https://github.com/epaulsen/energytariff and select "Integration" as category.
 Click "Add" at the bottom of the dialogbox.
 
 Go to HACS -> Integrations, click the blue + sign at the bottom right of the screen.
-Search for `EnergyTariff` and install it as any other HACS component.  
+Search for `EnergyTariff` and install it as any other HACS component.
 A HA restart is required before configuration for HomeAssistant to pick up the new integration.
 
 
@@ -132,7 +132,9 @@ Output is in kWh.  Sample sensor data:
 
 ### Available power this hour
 
-This sensor displays how much power you can use for the remaining part of current hour without exceeding configured threshold.  If `target_energy` is configured, this value is used as a threshold.  Otherwise, if `level` setting is configured, the current energy level threshold value is used.  If neither are configured, this sensor is unavailable
+This sensor displays how much power you can use for the remaining part of current hour without exceeding configured threshold if it has a positive value.  If sensor value is negative, power usage much be reduced by that amount to remain within threshold value.
+
+If `target_energy` setting is configured, this value is used as a threshold.  Otherwise, if `level` setting is configured, the current energy level threshold value is used.  If neither are configured, this sensor is unavailable.
 
 Given that `EC` is energy consumed, `EF` is current power, `TT` is threshold and `TD` is remaining seconds of hour, calculation is done using this formula:
 

@@ -357,7 +357,7 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
         # Case 2: Items in list.  If any are same day as consumption-item,
         # update that one if energy is higher.  Recalculate and return
         for i in range(len(self.attr["top_three"])):
-            if self.attr["top_three"][i]["day"] == consumption["day"]:
+            if int(self.attr["top_three"][i]["day"]) == int(consumption["day"]):
                 if self.attr["top_three"][i]["energy"] < consumption["energy"]:
                     self.attr["top_three"][i]["energy"] = consumption["energy"]
                     self.attr["top_three"][i]["hour"] = consumption["hour"]
