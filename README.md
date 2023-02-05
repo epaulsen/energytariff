@@ -87,6 +87,9 @@ levels:
   - name: "Trinn 2: 2-5 kWh"
     threshold: 5
     price: 170
+  - name: "Trinn 2: 5-10 kWh"
+    threshold: 10
+    price: 290
 ```
 
 For a complete configuration example with all properties, see [full example](examples/full.yaml)
