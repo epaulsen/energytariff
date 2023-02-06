@@ -44,6 +44,11 @@ A HA restart is required before configuration for HomeAssistant to pick up the n
 
 ## Configuration
 
+**Important!**
+After first install of this component, a restart of HomeAssistant is required.
+If configuration is added before HA is rebootet after install, configuration validation will fail,
+because HA does yet know about the new integration.  This is a known issue, with no easy fix.
+
 Configuration of this sensor is done in yaml.
 Minimal example: `configuration.yaml` :
 
@@ -103,12 +108,12 @@ This integration provides the following sensors:
 | [Energy used this hour](#energy-used-this-hour) | kWh | Total amount of energy consumed this hour.  Resets to zero at the start of a new hour. |
 | [Energy estimate this hour](#energy-estimate-this-hour) | kWh | Energy estimate this hour.  Based on energy consumption so far + current_power * remaining_seconds |
 | [Available power this hour](#available-power-this-hour) | W | How much power that can be used for the remaining part of hour and still remain within threshold limit, either configured in `target_energy` setting or at the configured grid level threshold(`level` threshold). |
-| [Average peak hour energy](#average-peak-hour-energy) | kWh | The highest hourly consumption, measured on three different days.  Used to calculate grid energy level.  Resets every month. |
 
 Additionally, if `levels` are configured, the following sensors are added:
 
 | Name | Unit | Description |
 |------|------|-------------|
+| [Average peak hour energy](#average-peak-hour-energy) | kWh | The highest hourly consumption, measured on three different days.  Used to calculate grid energy level.  Resets every month. |
 | [Energy level name](#energy-level-name) | string | Name of current energy level |
 | [Energy level price](#energy-level-price) | currency | Price of current energy level |
 | [Energy level upper threshold](#energy-level-upper-threshold) | kWh | Upper energy threshold of current energy level |
@@ -161,7 +166,7 @@ As sensor data from three different days are needed in order to calculate grid l
 
 ## Average peak hour energy
 This sensor displays the average of the three hours with highest energy usage, from three different days.
-Value is reset when a new month starts.
+Value is reset when a new month starts.  This sensor is not available if `levels` have not been added to configuration.
 
 **NOTE** Sensor will not work properly until it it has two full days of data + 1 hour from day 3.
 For the first day after month start, it will display the highest consumption that is measured for an individual hour.
