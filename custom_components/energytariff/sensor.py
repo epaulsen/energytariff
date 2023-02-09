@@ -54,6 +54,7 @@ from .utils import (
     seconds_between,
     convert_to_watt,
     get_rounding_precision,
+    calculate_top_three,
 )
 
 _LOGGER = getLogger(__name__)
@@ -327,65 +328,8 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
 
         if state is None:
             return
-        day = state.timestamp.day
-        hour = state.timestamp.hour
-        energy = state.energy_consumed
-        timestamp = state.timestamp
-
-        if self._last_update is not None and timestamp.month != self._last_update.month:
-
-            _LOGGER.debug("New month: %s", timestamp)
-            # New month, so reset top_three list and sensor value
-            self.attr["top_three"].clear()
-            self._state = None
-
-        self._last_update = timestamp
-
-        consumption = {
-            "day": day,
-            "hour": hour,
-            "energy": energy,
-        }
-
-        # Case 1:Empty list. Uncricitally add, calculate level and return
-        if len(self.attr["top_three"]) == 0:
-            _LOGGER.debug("Adding first item")
-            self.attr["top_three"].append(consumption)
-            self.calculate_level()
-            return
-
-        # Case 2: Items in list.  If any are same day as consumption-item,
-        # update that one if energy is higher.  Recalculate and return
-        for i in range(len(self.attr["top_three"])):
-            if int(self.attr["top_three"][i]["day"]) == int(consumption["day"]):
-                if self.attr["top_three"][i]["energy"] < consumption["energy"]:
-                    self.attr["top_three"][i]["energy"] = consumption["energy"]
-                    self.attr["top_three"][i]["hour"] = consumption["hour"]
-                    _LOGGER.debug(
-                        "Updating current-day item to %s", consumption["energy"]
-                    )
-                    self.calculate_level()
-                return
-
-        # Case 3: We are not on the same day as any items in the list,
-        # but have less than 3 items in list.
-        # Add, re-calculate and return
-        if len(self.attr["top_three"]) < 3:
-            self.attr["top_three"].append(consumption)
-            _LOGGER.debug("Adding new item")
-            self.calculate_level()
-            return
-
-        # Case 4: Not same day, list has three element.
-        # If lowest level has lower consumption, replace element,
-        # recalculate and return
-        self.attr["top_three"].sort(key=lambda x: x["energy"])
-        for i in range(len(self.attr["top_three"])):
-            if self.attr["top_three"][i]["energy"] < consumption["energy"]:
-                _LOGGER.debug("Updating item %s", i)
-                self.attr["top_three"][i] = consumption
-                self.calculate_level()
-                return
+        self.attr["top_three"] = calculate_top_three(state, self.attr["top_three"])
+        self.calculate_level()
 
     def calculate_level(self) -> bool:
         """Calculate the grid threshold level based on average of the highest hours"""
@@ -479,7 +423,7 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
 
         self._levels = config.get(GRID_LEVELS)
 
-        self._coordinator.thresholddata.subscribe(self._state_change)
+        self._coordinator.effectstate.subscribe(self._state_change)
 
     async def async_added_to_hass(self) -> None:
         """Call when entity about to be added to hass."""
@@ -498,19 +442,19 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
                         }
                     )
 
-    def _state_change(self, state: GridThresholdData):
+    def _state_change(self, state: EnergyData) -> None:
         if state is None:
             return
-        self.attr["top_three"] = state.top_three
-        self.calculate_sensor()
+        self.attr["top_three"] = calculate_top_three(state, self.attr["top_three"])
 
-    def calculate_sensor(self) -> bool:
-        """Calculate the grid threshold level based on average of the highest hours"""
-        sum = 0.0
+        totalSum = float(0)
         for hour in self.attr["top_three"]:
-            sum += hour["energy"]
+            totalSum += float(hour["energy"])
 
-        self._state = sum / len(self.attr["top_three"])
+        if len(self.attr["top_three"]) == 0:
+            return
+
+        self._state = totalSum / len(self.attr["top_three"])
         self.schedule_update_ha_state(True)
         return True
 

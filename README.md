@@ -108,12 +108,12 @@ This integration provides the following sensors:
 | [Energy used this hour](#energy-used-this-hour) | kWh | Total amount of energy consumed this hour.  Resets to zero at the start of a new hour. |
 | [Energy estimate this hour](#energy-estimate-this-hour) | kWh | Energy estimate this hour.  Based on energy consumption so far + current_power * remaining_seconds |
 | [Available power this hour](#available-power-this-hour) | W | How much power that can be used for the remaining part of hour and still remain within threshold limit, either configured in `target_energy` setting or at the configured grid level threshold(`level` threshold). |
+| [Average peak hour energy](#average-peak-hour-energy) | kWh | The highest hourly consumption, measured on three different days.  Used to calculate grid energy level.  Resets every month. |
 
 Additionally, if `levels` are configured, the following sensors are added:
 
 | Name | Unit | Description |
 |------|------|-------------|
-| [Average peak hour energy](#average-peak-hour-energy) | kWh | The highest hourly consumption, measured on three different days.  Used to calculate grid energy level.  Resets every month. |
 | [Energy level name](#energy-level-name) | string | Name of current energy level |
 | [Energy level price](#energy-level-price) | currency | Price of current energy level |
 | [Energy level upper threshold](#energy-level-upper-threshold) | kWh | Upper energy threshold of current energy level |

@@ -6,6 +6,8 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 
+from custom_components.energytariff.coordinator import EnergyData
+
 from .const import ROUNDING_PRECISION
 
 
@@ -65,3 +67,54 @@ def convert_to_watt(data: any) -> float:
         if unit != "W":
             return None
     return value
+
+
+def calculate_top_three(state: EnergyData, top_three: Any) -> Any:
+    """Mainains the list of top three hours for a month"""
+
+    if state is None:
+        return top_three
+
+    consumption = {
+        "day": state.timestamp.day,
+        "hour": state.timestamp.hour,
+        "energy": state.energy_consumed,
+    }
+
+    # Case 1:Empty list. Uncricitally add, calculate level and return
+    if len(top_three) == 0:
+        # _LOGGER.debug("Adding first item")
+        top_three.append(consumption)
+        return top_three
+
+    # Case 2: Items in list.  If any are same day as consumption-item,
+    # update that one if energy is higher.  Recalculate and return
+    for i in range(len(top_three)):
+        if int(top_three[i]["day"]) == int(consumption["day"]):
+            if top_three[i]["energy"] < consumption["energy"]:
+                top_three[i]["energy"] = consumption["energy"]
+                top_three[i]["hour"] = consumption["hour"]
+                # _LOGGER.debug(
+                #     "Updating current-day item to %s", consumption["energy"]
+                # )
+
+            return top_three
+
+    # Case 3: We are not on the same day as any items in the list,
+    # but have less than 3 items in list.
+    # Add, re-calculate and return
+    if len(top_three) < 3:
+        top_three.append(consumption)
+        return top_three
+
+    # Case 4: Not same day, list has three element.
+    # If lowest level has lower consumption, replace element,
+    # recalculate and return
+    top_three.sort(key=lambda x: x["energy"])
+    for i in range(len(top_three)):
+        if top_three[i]["energy"] < consumption["energy"]:
+            top_three[i] = consumption
+            return top_three
+
+    # If we got this far, list has no changes, to return it as-is.
+    return top_three
