@@ -1,6 +1,8 @@
 from datetime import datetime, timedelta
 from typing import Any
 
+from homeassistant.util import dt
+
 from homeassistant.const import (
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
@@ -75,9 +77,11 @@ def calculate_top_three(state: EnergyData, top_three: Any) -> Any:
     if state is None:
         return top_three
 
+    localtime = dt.as_local(state.timestamp)
+
     consumption = {
-        "day": state.timestamp.day,
-        "hour": state.timestamp.hour,
+        "day": localtime.day,
+        "hour": localtime.hour,
         "energy": state.energy_consumed,
     }
 

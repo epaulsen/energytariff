@@ -293,14 +293,14 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
         self._effect_sensor_id = config.get(CONF_EFFECT_ENTITY)
         self._coordinator = rx_coord
         self._state = None
-        self._last_update = dt.now()
+        # self._last_update = dt.as_local(dt.now)
         self._attr_unique_id = (
             f"{DOMAIN}_{self._effect_sensor_id}_grid_effect_threshold_kwh".replace(
                 "sensor.", ""
             )
         )
 
-        self.attr = {"top_three": [], "level_name": "Unknown", "price": "Unknown"}
+        self.attr = {"top_three": [], "month": dt.as_local(dt.now()).month}
 
         self._levels = config.get(GRID_LEVELS)
 
@@ -313,6 +313,8 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
         if savedstate:
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 self._state = float(savedstate.state)
+            if "month" in savedstate.attributes:
+                self.attr["month"] = int(savedstate.attributes["month"])
             if "top_three" in savedstate.attributes:
                 for item in savedstate.attributes["top_three"]:
                     self.attr["top_three"].append(
@@ -325,9 +327,12 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
                 self.calculate_level()
 
     def _state_change(self, state: EnergyData) -> None:
-
         if state is None:
             return
+        if int(self.attr["month"]) != dt.as_local(state.timestamp).month:
+            self.attr["top_three"].clear()
+
+        self.attr["month"] = dt.as_local(dt.now()).month
         self.attr["top_three"] = calculate_top_three(state, self.attr["top_three"])
         self.calculate_level()
 
@@ -419,7 +424,7 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
             )
         )
 
-        self.attr = {"top_three": []}
+        self.attr = {"top_three": [], "month": dt.as_local(dt.now()).month}
 
         self._levels = config.get(GRID_LEVELS)
 
@@ -432,6 +437,8 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
         if savedstate:
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 self._state = float(savedstate.state)
+            if "month" in savedstate.attributes:
+                self.attr["month"] = int(savedstate.attributes["month"])
             if "top_three" in savedstate.attributes:
                 for item in savedstate.attributes["top_three"]:
                     self.attr["top_three"].append(
@@ -445,6 +452,11 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
     def _state_change(self, state: EnergyData) -> None:
         if state is None:
             return
+
+        if int(self.attr["month"]) != dt.as_local(state.timestamp).month:
+            self.attr["top_three"].clear()
+
+        self.attr["month"] = dt.as_local(dt.now()).month
         self.attr["top_three"] = calculate_top_three(state, self.attr["top_three"])
 
         totalSum = float(0)
