@@ -1,15 +1,15 @@
 {
   "domain": "energytariff",
   "name": "Energy tariff",
-  "integration_type": "device",
-  "documentation": "https://github.com/epaulsen/energytariff",
-  "issue_tracker": "https://github.com/epaulsen/energytariff/issues",
-  "dependencies": [],
-  "iot_class": "calculated",
-  "config_flow": false,
   "codeowners": [
     "@epaulsen"
   ],
+  "config_flow": false,
+  "dependencies": [],
+  "documentation": "https://github.com/epaulsen/energytariff",  
+  "integration_type": "device", 
+  "iot_class": "calculated",
+  "issue_tracker": "https://github.com/epaulsen/energytariff/issues",  
   "requirements": [
     "rx==3.2.0"
   ],
