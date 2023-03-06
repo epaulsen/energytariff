@@ -1,8 +1,7 @@
 """Sensor platform for grid-cap-watcher."""
 from logging import getLogger
-from datetime import datetime
-
-from typing import Any, Callable
+from datetime import datetime, timedelta
+from typing import Any
 import voluptuous as vol
 from homeassistant.util import dt
 import homeassistant.helpers.config_validation as cv
@@ -29,10 +28,6 @@ from homeassistant.helpers.event import (
     async_track_state_change,
     async_track_point_in_time,
 )
-from homeassistant.helpers.typing import (
-    ConfigType,
-    HomeAssistantType,
-)
 
 from .const import (
     DOMAIN,
@@ -45,12 +40,14 @@ from .const import (
     MAX_EFFECT_ALLOWED,
     ROUNDING_PRECISION,
     TARGET_ENERGY,
+    RESET_TOP_THREE,
 )
 
 from .coordinator import GridCapacityCoordinator, EnergyData, GridThresholdData
 
 from .utils import (
     start_of_next_hour,
+    start_of_next_month,
     seconds_between,
     convert_to_watt,
     get_rounding_precision,
@@ -78,15 +75,11 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 )
 
 
-async def async_setup_platform(
-    hass: HomeAssistantType,
-    config: ConfigType,
-    async_add_entities: Callable,
-    _,
-) -> None:
+async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     """Setup sensor platform."""
 
     rx_coord = GridCapacityCoordinator(hass)
+
     async_add_entities(
         [
             GridCapWatcherEnergySensor(hass, config, rx_coord),
@@ -293,18 +286,23 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
         self._effect_sensor_id = config.get(CONF_EFFECT_ENTITY)
         self._coordinator = rx_coord
         self._state = None
-        # self._last_update = dt.as_local(dt.now)
         self._attr_unique_id = (
             f"{DOMAIN}_{self._effect_sensor_id}_grid_effect_threshold_kwh".replace(
                 "sensor.", ""
             )
         )
 
-        self.attr = {"top_three": [], "month": dt.as_local(dt.now()).month}
+        self.attr = {"top_three": []}
 
         self._levels = config.get(GRID_LEVELS)
 
         self._coordinator.effectstate.subscribe(self._state_change)
+
+        hass.bus.async_listen(RESET_TOP_THREE, self.handle_reset_event)
+
+        async_track_point_in_time(
+            hass, self._async_reset_meter, start_of_next_month(dt.as_local(dt.now()))
+        )
 
     async def async_added_to_hass(self) -> None:
         """Call when entity about to be added to hass."""
@@ -313,8 +311,6 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
         if savedstate:
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 self._state = float(savedstate.state)
-            if "month" in savedstate.attributes:
-                self.attr["month"] = int(savedstate.attributes["month"])
             if "top_three" in savedstate.attributes:
                 for item in savedstate.attributes["top_three"]:
                     self.attr["top_three"].append(
@@ -326,11 +322,26 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
                     )
                 self.calculate_level()
 
+    @callback
+    def _async_reset_meter(self, _):
+        """Resets the attributes so that we don't carry over old values to new month"""
+        self.attr["top_three"] = []
+        self.schedule_update_ha_state(True)
+        _LOGGER.debug("Monthly reset")
+        async_track_point_in_time(
+            self._hass,
+            self._async_reset_meter,
+            start_of_next_month(dt.as_local(dt.now())),
+        )
+
+    @callback
+    def handle_reset_event(self, event):
+        """Handle reset event to reset top three attributes"""
+        self._async_reset_meter(event)
+
     def _state_change(self, state: EnergyData) -> None:
         if state is None:
             return
-        if int(self.attr["month"]) != dt.as_local(state.timestamp).month:
-            self.attr["top_three"].clear()
 
         self.attr["month"] = dt.as_local(dt.now()).month
         self.attr["top_three"] = calculate_top_three(state, self.attr["top_three"])
@@ -424,11 +435,17 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
             )
         )
 
-        self.attr = {"top_three": [], "month": dt.as_local(dt.now()).month}
+        self.attr = {"top_three": []}
 
         self._levels = config.get(GRID_LEVELS)
 
         self._coordinator.effectstate.subscribe(self._state_change)
+
+        hass.bus.async_listen(RESET_TOP_THREE, self.handle_reset_event)
+
+        async_track_point_in_time(
+            hass, self._async_reset_meter, start_of_next_month(dt.as_local(dt.now()))
+        )
 
     async def async_added_to_hass(self) -> None:
         """Call when entity about to be added to hass."""
@@ -437,8 +454,6 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
         if savedstate:
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 self._state = float(savedstate.state)
-            if "month" in savedstate.attributes:
-                self.attr["month"] = int(savedstate.attributes["month"])
             if "top_three" in savedstate.attributes:
                 for item in savedstate.attributes["top_three"]:
                     self.attr["top_three"].append(
@@ -449,14 +464,27 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
                         }
                     )
 
+    @callback
+    def _async_reset_meter(self, _):
+        """Resets the attributes so that we don't carry over old values to new month"""
+        self.attr["top_three"] = []
+        self.schedule_update_ha_state(True)
+        _LOGGER.debug("Monthly reset")
+        async_track_point_in_time(
+            self._hass,
+            self._async_reset_meter,
+            start_of_next_month(dt.as_local(dt.now())),
+        )
+
+    @callback
+    def handle_reset_event(self, event):
+        """Handle reset event to reset top three attributes"""
+        self._async_reset_meter(event)
+
     def _state_change(self, state: EnergyData) -> None:
         if state is None:
             return
 
-        if int(self.attr["month"]) != dt.as_local(state.timestamp).month:
-            self.attr["top_three"].clear()
-
-        self.attr["month"] = dt.as_local(dt.now()).month
         self.attr["top_three"] = calculate_top_three(state, self.attr["top_three"])
 
         totalSum = float(0)

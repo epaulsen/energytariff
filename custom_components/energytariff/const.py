@@ -32,6 +32,8 @@ ROUNDING_PRECISION = "precision"
 PEAK_HOUR = "peak_hour"
 TARGET_ENERGY = "target_energy"
 
+RESET_TOP_THREE = "energytariff_reset_top_three_hours"
+
 # Defaults
 DEFAULT_NAME = DOMAIN
 

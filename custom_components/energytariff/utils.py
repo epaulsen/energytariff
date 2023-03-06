@@ -42,7 +42,7 @@ def start_of_next_hour(date_object: datetime) -> datetime:
 
 
 def start_of_next_month(date_object: datetime) -> datetime:
-    """Returns a datetime object that is set at start of next month + 5 seconds"""
+    """Returns a datetime object that is set at start of next month + 1 second."""
     if date_object.month == 12:
         month = 1
         year = date_object.year + 1
