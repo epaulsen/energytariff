@@ -41,6 +41,19 @@ def start_of_next_hour(date_object: datetime) -> datetime:
     return value
 
 
+def start_of_next_month(date_object: datetime) -> datetime:
+    """Returns a datetime object that is set at start of next month + 5 seconds"""
+    if date_object.month == 12:
+        month = 1
+        year = date_object.year + 1
+    else:
+        month = date_object.month + 1
+        year = date_object.year
+
+    value = datetime(year, month, 1, 0, 0, 1, 0, tzinfo=date_object.tzinfo)
+    return value
+
+
 def seconds_between(date_object_1: datetime, date_object_2: datetime) -> int:
     """Returns number of seconds between two dates"""
     return (date_object_1 - date_object_2).total_seconds()
