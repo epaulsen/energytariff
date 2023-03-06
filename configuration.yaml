@@ -9,13 +9,13 @@ logger:
 
 homeassistant:
   allowlist_external_dirs:
-    - "/workspaces/grid-cap-watcher"
+    - "/workspaces/energytariff"
 
 sensor:
   - platform: file
     name: "power_usage"
     unit_of_measurement: "W"
-    file_path: /workspaces/grid-cap-watcher/sensor-data.txt
+    file_path: /workspaces/energytariff/sensor-data.txt
 
   - platform: energytariff
     entity_id: "sensor.power_usage"
