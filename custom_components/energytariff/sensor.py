@@ -320,7 +320,6 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
                             "energy": item["energy"],
                         }
                     )
-                self.calculate_level()
 
     @callback
     def _async_reset_meter(self, _):
