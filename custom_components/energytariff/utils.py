@@ -92,10 +92,18 @@ def calculate_top_three(state: EnergyData, top_three: Any) -> Any:
 
     localtime = dt.as_local(state.timestamp)
 
+    energy_used = state.energy_consumed
+
+    # Solar or wind production can cause the energy meter to have negative values
+    # Set this to 0, as tariffs are only for consumption and we don't have negative
+    # tariff values in the tariff config section.
+    if energy_used < 0:
+        energy_used = 0
+
     consumption = {
         "day": localtime.day,
         "hour": localtime.hour,
-        "energy": state.energy_consumed,
+        "energy": energy_used,
     }
 
     # Case 1:Empty list. Uncricitally add, calculate level and return
