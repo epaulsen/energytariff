@@ -3,7 +3,7 @@ default_config:
 logger:
   default: info
   logs:
-    custom_components.grid_energy_level: debug
+    custom_components.energytariff: debug
 # If you need to debug uncommment the line below (doc: https://www.home-assistant.io/integrations/debugpy/)
 # debugpy:
 
