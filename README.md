@@ -133,7 +133,10 @@ Output is in kWh.  Sample sensor data:
 
 ### Available power this hour
 
-This sensor displays how much power you can use for the remaining part of current hour without exceeding configured threshold if it has a positive value.  If sensor value is negative, power usage much be reduced by that amount to remain within threshold value.
+This sensor shows remaining power you can use this hour without exceeding grid threshold level.  
+When sensor value is positive, power usage can be increased by sensor value without exceeding threshold value.
+As an example, if value is 1000W, power usage can be increased by 1000W and you will still remain within current grid threshold value.
+If sensor value is negative, power usage much be reduced by that amount to remain within threshold value.  So if sensor value is -1500W, you need to reduce power consumption by 1500W to remain withing threshold level.
 
 If `target_energy` setting is configured, this value is used as a threshold.  Otherwise, if `level` setting is configured, the current energy level threshold value is used.  If neither are configured, this sensor is unavailable.
 
