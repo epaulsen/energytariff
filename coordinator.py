@@ -1,10 +1,12 @@
 import datetime
 from rx.subject.behaviorsubject import BehaviorSubject
-from homeassistant.core import HomeAssistant
+from homeassistant.helpers.typing import (
+    HomeAssistantType,
+)
 
 
 class EnergyData:
-    """Class used to transmit sensor notification via rx"""
+    """Class used to transmit sensor nofication via rx"""
 
     def __init__(self, energy: float, effect: float, timestamp: datetime):
         self.energy_consumed = energy
@@ -34,7 +36,7 @@ class GridThresholdData:
 class GridCapacityCoordinator:
     """Coordinator entity that signals notifications for sensors"""
 
-    def __init__(self, hass: HomeAssistant):
+    def __init__(self, hass: HomeAssistantType):
         self._hass = hass
         self.effectstate = BehaviorSubject(None)
         self.thresholddata = BehaviorSubject(None)

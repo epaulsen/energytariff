@@ -1,6 +1,6 @@
 """Sensor platform for grid-cap-watcher."""
 from logging import getLogger
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 import voluptuous as vol
 from homeassistant.util import dt
@@ -25,7 +25,7 @@ from homeassistant.const import (
     STATE_UNKNOWN,
 )
 from homeassistant.helpers.event import (
-    async_track_state_change,
+    async_track_state_change_event,
     async_track_point_in_time,
 )
 
@@ -105,6 +105,7 @@ class GridCapWatcherEnergySensor(RestoreSensor):
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
 
     def __init__(self, hass, config, rx_coord: GridCapacityCoordinator):
+
         self._hass = hass
         self._effect_sensor_id = config.get(CONF_EFFECT_ENTITY)
         self._precision = get_rounding_precision(config)
@@ -117,7 +118,7 @@ class GridCapWatcherEnergySensor(RestoreSensor):
         )
 
         # Listen to input sensor state change event
-        self.__unsub = async_track_state_change(
+        self.__unsub = async_track_state_change_event(
             hass, self._effect_sensor_id, self.handle_sensor_change
         )
 
@@ -141,7 +142,6 @@ class GridCapWatcherEnergySensor(RestoreSensor):
         _LOGGER.debug("Hourly reset")
         self._state = 0
         self.async_schedule_update_ha_state(True)
-        self.fire_event(0, time)
         async_track_point_in_time(
             self._hass, self.hourly_reset, start_of_next_hour(time)
         )
@@ -210,6 +210,7 @@ class GridCapWatcherEstimatedEnergySensor(SensorEntity):
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
 
     def __init__(self, hass, config, rx_coord: GridCapacityCoordinator):
+
         self._hass = hass
         self._effect_sensor_id = config.get(CONF_EFFECT_ENTITY)
         self._coordinator = rx_coord
@@ -280,6 +281,7 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
 
     def __init__(self, hass, config, rx_coord: GridCapacityCoordinator):
+
         self._hass = hass
         self._effect_sensor_id = config.get(CONF_EFFECT_ENTITY)
         self._coordinator = rx_coord
@@ -318,6 +320,7 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
                             "energy": item["energy"],
                         }
                     )
+                self.calculate_level()
 
     @callback
     def _async_reset_meter(self, _):
@@ -356,6 +359,7 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
         found_threshold = self.get_level(average_value)
 
         if found_threshold is not None:
+
             self._state = found_threshold["threshold"]
             self.schedule_update_ha_state(True)
 
@@ -419,6 +423,7 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
 
     def __init__(self, hass, config, rx_coord: GridCapacityCoordinator):
+
         self._hass = hass
         self._effect_sensor_id = config.get(CONF_EFFECT_ENTITY)
         self._coordinator = rx_coord
@@ -533,6 +538,7 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor, RestoreEntity):
     _attr_native_unit_of_measurement = UnitOfPower.WATT
 
     def __init__(self, hass, config, rx_coord: GridCapacityCoordinator):
+
         self._hass = hass
         self._effect_sensor_id = config.get(CONF_EFFECT_ENTITY)
         self._effect = None
@@ -564,14 +570,12 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor, RestoreEntity):
                 self.attr["grid_threshold_level"] = savedstate.attributes[
                     "grid_threshold_level"
                 ]
-            self.__calculate()
 
     def _threshold_state_change(self, state: GridThresholdData):
         if state is None:
             return
         self.attr["grid_threshold_level"] = state.level
         self.__calculate()
-        self.schedule_update_ha_state(True)
 
     def _effect_state_change(self, state: EnergyData):
         if state is None:
@@ -579,7 +583,6 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor, RestoreEntity):
         self._energy = state.energy_consumed
         self._effect = state.current_effect
         self.__calculate()
-        self.schedule_update_ha_state(True)
 
     def __calculate(self):
         if (
@@ -623,6 +626,7 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor, RestoreEntity):
             power = float(self._max_effect) * -1
 
         self._state = power
+        self.schedule_update_ha_state(True)
 
         return True
 
