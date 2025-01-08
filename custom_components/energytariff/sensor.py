@@ -1,11 +1,12 @@
 """Sensor platform for grid-cap-watcher."""
+
 from logging import getLogger
 from datetime import datetime
 from typing import Any
 import voluptuous as vol
 from homeassistant.util import dt
 import homeassistant.helpers.config_validation as cv
-from homeassistant.core import callback
+from homeassistant.core import Event, EventStateChangedData, callback
 
 from homeassistant.components.sensor import (
     SensorStateClass,
@@ -18,14 +19,11 @@ from homeassistant.components.sensor import (
 from homeassistant.const import (
     UnitOfEnergy,
     UnitOfPower,
-)
-
-from homeassistant.const import (
     STATE_UNAVAILABLE,
     STATE_UNKNOWN,
 )
 from homeassistant.helpers.event import (
-    async_track_state_change,
+    async_track_state_change_event,
     async_track_point_in_time,
 )
 
@@ -117,8 +115,8 @@ class GridCapWatcherEnergySensor(RestoreSensor):
         )
 
         # Listen to input sensor state change event
-        self.__unsub = async_track_state_change(
-            hass, self._effect_sensor_id, self.handle_sensor_change
+        self.__unsub = async_track_state_change_event(
+            hass, self._effect_sensor_id, self._async_on_change
         )
 
         # Setup hourly sensor reset.
@@ -147,8 +145,11 @@ class GridCapWatcherEnergySensor(RestoreSensor):
         )
 
     @callback
-    def handle_sensor_change(self, _, old_state, new_state):
+    def _async_on_change(self, event: Event[EventStateChangedData]) -> None:
         """Callback for when the AMS sensor changes"""
+
+        old_state = event.data["old_state"]
+        new_state = event.data["new_state"]
 
         if new_state is None or old_state is None:
             return

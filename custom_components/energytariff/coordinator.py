@@ -1,7 +1,7 @@
 import datetime
 from rx.subject.behaviorsubject import BehaviorSubject
-from homeassistant.helpers.typing import (
-    HomeAssistantType,
+from homeassistant.core import (
+    HomeAssistant,
 )
 
 
@@ -36,7 +36,7 @@ class GridThresholdData:
 class GridCapacityCoordinator:
     """Coordinator entity that signals notifications for sensors"""
 
-    def __init__(self, hass: HomeAssistantType):
+    def __init__(self, hass: HomeAssistant):
         self._hass = hass
         self.effectstate = BehaviorSubject(None)
         self.thresholddata = BehaviorSubject(None)
