@@ -139,7 +139,7 @@ class GridCapWatcherEnergySensor(RestoreSensor):
         _LOGGER.debug("Hourly reset")
         self._state = 0
         self.async_schedule_update_ha_state(True)
-        self.fire_event(0, time)
+        #self.fire_event(0, time)   <-- Commented as this somehow causes problems for some installations.
         async_track_point_in_time(
             self._hass, self.hourly_reset, start_of_next_hour(time)
         )
