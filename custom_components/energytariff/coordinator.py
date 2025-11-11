@@ -1,5 +1,7 @@
 import datetime
-from rx.subject.behaviorsubject import BehaviorSubject
+from typing import Any
+
+from reactivex.subject import BehaviorSubject
 from homeassistant.core import (
     HomeAssistant,
 )
@@ -8,7 +10,7 @@ from homeassistant.core import (
 class EnergyData:
     """Class used to transmit sensor nofication via rx"""
 
-    def __init__(self, energy: float, effect: float, timestamp: datetime):
+    def __init__(self, energy: float, effect: float, timestamp: datetime.datetime):
         self.energy_consumed = energy
         self.current_effect = effect
         self.timestamp = timestamp
@@ -26,7 +28,7 @@ class TopHour:
 class GridThresholdData:
     """Class used to transmit changes of level threshold changes"""
 
-    def __init__(self, name, level: float, price: float, top_three: any):
+    def __init__(self, name, level: float, price: float, top_three: Any):
         self.name = name
         self.level = level
         self.price = price
