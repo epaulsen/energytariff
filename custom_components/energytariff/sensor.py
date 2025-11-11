@@ -435,7 +435,11 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
 
         self._levels = config.get(GRID_LEVELS)
 
+        # Subscribe to both effectstate (for backwards compatibility and when no levels are configured)
+        # and thresholddata (to get synchronized top_three from threshold sensor)
         self._coordinator.effectstate.subscribe(self._state_change)
+        if config.get(GRID_LEVELS) is not None:
+            self._coordinator.thresholddata.subscribe(self._threshold_state_change)
 
         hass.bus.async_listen(RESET_TOP_THREE, self.handle_reset_event)
 
@@ -477,10 +481,38 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
         """Handle reset event to reset top three attributes"""
         self._async_reset_meter(event)
 
+    def _threshold_state_change(self, threshold_data: GridThresholdData) -> None:
+        """Update top_three and average from threshold sensor.
+        
+        This ensures that the average sensor and threshold sensor always use
+        the same top_three data, preventing synchronization issues.
+        """
+        if threshold_data is None:
+            return
+        
+        # Use the top_three from the threshold sensor
+        self.attr["top_three"] = threshold_data.top_three
+        
+        # Recalculate the average
+        if len(self.attr["top_three"]) == 0:
+            return
+        
+        totalSum = float(0)
+        for hour in self.attr["top_three"]:
+            totalSum += float(hour["energy"])
+        
+        self._state = totalSum / len(self.attr["top_three"])
+        self.schedule_update_ha_state(True)
+
     def _state_change(self, state: EnergyData) -> None:
         if state is None:
             return
 
+        # Only calculate top_three if levels are not configured
+        # If levels are configured, we get top_three from threshold sensor via _threshold_state_change
+        if self._levels is not None:
+            return
+        
         self.attr["top_three"] = calculate_top_three(state, self.attr["top_three"])
 
         totalSum = float(0)

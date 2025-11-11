@@ -1,5 +1,5 @@
 import datetime
-from rx.subject.behaviorsubject import BehaviorSubject
+from reactivex.subject import BehaviorSubject
 from homeassistant.core import (
     HomeAssistant,
 )
