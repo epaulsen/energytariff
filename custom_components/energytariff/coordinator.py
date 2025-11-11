@@ -1,8 +1,9 @@
 import datetime
-from reactivex.subject import BehaviorSubject
+
 from homeassistant.core import (
     HomeAssistant,
 )
+from reactivex.subject import BehaviorSubject
 
 
 class EnergyData:
