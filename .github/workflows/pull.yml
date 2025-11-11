@@ -3,6 +3,8 @@ name: Pull Request Validation
 on:
   push:
   pull_request:
+    branches:
+      - main
   #schedule:
   #  - cron: "0 0 * * *"
 
@@ -22,5 +24,24 @@ jobs:
     steps:
       - uses: "actions/checkout@v3"
       - uses: "home-assistant/actions/hassfest@master"
+  
+  pytest:
+    name: Run Tests
+    runs-on: "ubuntu-latest"
+    steps:
+      - name: Checkout code
+        uses: "actions/checkout@v3"
       
+      - name: Set up Python
+        uses: "actions/setup-python@v4"
+        with:
+          python-version: "3.11"
+      
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements_test.txt
+      
+      - name: Run pytest
+        run: pytest
       
