@@ -352,6 +352,27 @@ async def test_threshold_sensor_calculate_level(hass, config_with_levels, mock_c
     assert sensor._state == 5.0
     assert sensor.schedule_update_ha_state.called
 
+@pytest.mark.asyncio
+async def test_threshold_sensor_calculate_level_repro(hass, config_with_levels, mock_coordinator):
+    """Test threshold level calculation with top three hours."""
+    sensor = GridCapWatcherCurrentEffectLevelThreshold(
+        hass, config_with_levels, mock_coordinator
+    )
+    sensor.schedule_update_ha_state = Mock()
+    
+    # Set top three hours averaging to 3 kWh
+    sensor.attr["top_three"] = [
+        {"day": 1, "hour": 10, "energy": 6.902},
+        {"day": 2, "hour": 11, "energy": 5.1978},
+        {"day": 3, "hour": 12, "energy": 5.487},
+    ]
+    
+    sensor.calculate_level()
+    
+    # Average is 5.86, so should be level with threshold 8.0
+    assert sensor._state == 8.0
+    assert sensor.schedule_update_ha_state.called
+
 
 @pytest.mark.asyncio
 async def test_level_name_sensor_initialization(hass, config_with_levels, mock_coordinator):
