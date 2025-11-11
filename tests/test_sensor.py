@@ -38,6 +38,12 @@ pytest_plugins = "pytest_homeassistant_custom_component"
 
 
 @pytest.fixture
+def expected_lingering_timers():
+    """Allow lingering timers for sensor tests with time tracking."""
+    return True
+
+
+@pytest.fixture
 def basic_config():
     """Create a basic sensor configuration."""
     return {
@@ -72,7 +78,7 @@ def config_with_limits():
 
 
 @pytest.fixture
-def mock_coordinator(hass):
+async def mock_coordinator(hass):
     """Create a mock GridCapacityCoordinator."""
     return GridCapacityCoordinator(hass)
 
