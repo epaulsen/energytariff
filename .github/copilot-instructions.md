@@ -14,6 +14,8 @@ pytest tests/test_sensor.py -v
 
 Before submitting a PR that has changed code files, all tests must pass. Testing is done with pytest.
 
+**When adding or changing functionality, you must add tests that verify the new functionality works as expected.** This ensures code quality and prevents regressions.
+
 To run tests:
 ```bash
 pytest tests/test_sensor.py -v
