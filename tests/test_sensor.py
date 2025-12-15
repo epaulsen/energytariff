@@ -467,3 +467,23 @@ async def test_sensor_units_of_measurement(hass, basic_config, config_with_limit
     assert energy_sensor._attr_native_unit_of_measurement == UnitOfEnergy.KILO_WATT_HOUR
     assert estimated_sensor._attr_native_unit_of_measurement == UnitOfEnergy.KILO_WATT_HOUR
     assert available_sensor._attr_native_unit_of_measurement == UnitOfPower.WATT
+
+
+@pytest.mark.asyncio
+async def test_threshold_sensor_empty_list_division_protection(hass, config_with_levels, mock_coordinator):
+    """Test that calculate_level protects against division by zero with empty list."""
+    sensor = GridCapWatcherCurrentEffectLevelThreshold(
+        hass, config_with_levels, mock_coordinator
+    )
+    sensor.schedule_update_ha_state = Mock()
+    
+    # Set top_three to empty list (e.g., after monthly reset)
+    sensor.attr["top_three"] = []
+    
+    # This should not raise a ZeroDivisionError and should return False
+    result = sensor.calculate_level()
+    
+    # Should return False when list is empty
+    assert result == False
+    # State should remain unchanged
+    assert sensor._state is None
