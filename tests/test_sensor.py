@@ -484,6 +484,6 @@ async def test_threshold_sensor_empty_list_division_protection(hass, config_with
     result = sensor.calculate_level()
     
     # Should return False when list is empty
-    assert result == False
+    assert result is False
     # State should remain unchanged
     assert sensor._state is None
