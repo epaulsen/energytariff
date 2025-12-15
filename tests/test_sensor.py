@@ -388,7 +388,7 @@ async def test_threshold_sensor_calculate_level_empty(hass, config_with_levels, 
     result = sensor.calculate_level()
     
     # Should return False and not crash
-    assert result == False
+    assert result is False
     assert not sensor.schedule_update_ha_state.called
 
 
