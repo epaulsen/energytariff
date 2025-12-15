@@ -340,6 +340,9 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
 
     def calculate_level(self) -> bool:
         """Calculate the grid threshold level based on average of the highest hours"""
+        if len(self.attr["top_three"]) == 0:
+            return False
+        
         average_value = 0.0
         for hour in self.attr["top_three"]:
             average_value += hour["energy"]

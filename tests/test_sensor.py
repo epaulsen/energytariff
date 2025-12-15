@@ -375,6 +375,24 @@ async def test_threshold_sensor_calculate_level_repro(hass, config_with_levels, 
 
 
 @pytest.mark.asyncio
+async def test_threshold_sensor_calculate_level_empty(hass, config_with_levels, mock_coordinator):
+    """Test threshold level calculation with empty top_three list."""
+    sensor = GridCapWatcherCurrentEffectLevelThreshold(
+        hass, config_with_levels, mock_coordinator
+    )
+    sensor.schedule_update_ha_state = Mock()
+    
+    # Empty top_three list should not cause division by zero
+    sensor.attr["top_three"] = []
+    
+    result = sensor.calculate_level()
+    
+    # Should return False and not crash
+    assert result == False
+    assert not sensor.schedule_update_ha_state.called
+
+
+@pytest.mark.asyncio
 async def test_level_name_sensor_initialization(hass, config_with_levels, mock_coordinator):
     """Test GridCapacityWatcherCurrentLevelName initialization."""
     sensor = GridCapacityWatcherCurrentLevelName(
