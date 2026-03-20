@@ -304,9 +304,14 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor, RestoreEntity):
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 self._state = float(savedstate.state)
             if "top_three" in savedstate.attributes:
+                current_month = dt.as_local(dt.now()).month
                 for item in savedstate.attributes["top_three"]:
+                    item_month = item.get("month", None)
+                    if item_month is None or int(item_month) != current_month:
+                        continue
                     self.attr["top_three"].append(
                         {
+                            "month": int(item_month),
                             "day": item["day"],
                             "hour": item["hour"],
                             "energy": item["energy"],
@@ -446,9 +451,14 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 self._state = float(savedstate.state)
             if "top_three" in savedstate.attributes:
+                current_month = dt.as_local(dt.now()).month
                 for item in savedstate.attributes["top_three"]:
+                    item_month = item.get("month", None)
+                    if item_month is None or int(item_month) != current_month:
+                        continue
                     self.attr["top_three"].append(
                         {
+                            "month": int(item_month),
                             "day": item["day"],
                             "hour": item["hour"],
                             "energy": item["energy"],
@@ -482,8 +492,8 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
         if threshold_data is None:
             return
 
-        # Use the top_three from the threshold sensor
-        self.attr["top_three"] = threshold_data.top_three
+        # Use the top_three from the threshold sensor (shallow copy to prevent reference sharing)
+        self.attr["top_three"] = list(threshold_data.top_three)
 
         # Recalculate the average
         if len(self.attr["top_three"]) == 0:
@@ -498,11 +508,6 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor, RestoreEntity):
 
     def _state_change(self, state: EnergyData) -> None:
         if state is None:
-            return None
-
-        # Only calculate top_three if levels are not configured
-        # If levels are configured, we get top_three from threshold sensor via _threshold_state_change
-        if self._levels is not None:
             return None
 
         self.attr["top_three"] = calculate_top_three(state, self.attr["top_three"])
