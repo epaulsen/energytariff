@@ -148,3 +148,13 @@ Example (sensor_1_power):
 3. **P1 — Bug A:** Add `month` field to entries; validate on restore
 
 **Implementation Status:** Ready to code (Worf to author tests, implementation pending prioritisation)
+
+---
+
+## 2026-03 PR #39 Opened
+
+- **PR:** #39 — https://github.com/epaulsen/energytariff/pull/39
+- **URL:** https://github.com/epaulsen/energytariff/pull/39
+- **Commit SHA:** 708e22d71acc2568c415043fdb95c4438888d324
+- **Branch:** fix/issue-34-avg-sensor-stale
+- **Status:** Fixes for Regression A, Regression B, and Bug A committed and pushed. All 26 tests pass. Spock approved.
