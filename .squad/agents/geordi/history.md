@@ -87,3 +87,33 @@ The synthetic CSV data aligns directly with issue #34 regression testing needs:
    - sensor_2: Jan 17 17:00 (4,780.3 W) → Jan 11 17:00 → Jan 25 19:00
    - sensor_3: Jan 2 17:00 (4,986.5 W) → Jan 9 18:00 → Jan 23 17:00
    - sensor_4: Jan 13 17:00 (4,740.5 W) → Jan 27 17:00 → Jan 6 17:00
+
+---
+
+### Bug B Reproduced at Jan→Feb Boundary
+
+**Harness extension:** `--month-boundary` flag added to `logfiles/test_harness.py`  
+**Results:** `logfiles/results_026_boundary.txt`, `logfiles/results_030_boundary.txt`
+
+**What was implemented:**
+- `detect_bug_b(version_path)` — scans sensor.py for the `self.attr["top_three"] = threshold_data.top_three` pattern
+- `generate_february_data()` — 48h of synthetic Feb 2026 data (~2500 W, ±300 W, `random.gauss` seeded)
+- `simulate_month_boundary()` — models the critical path through January → reset → February for both versions
+- `print_boundary_results()` / `run_month_boundary_mode()` — outputs per the specified format
+
+**Key simulation logic:**
+- **0.2.6 model:** avg sensor computes top_three independently each hour. Threshold broadcast after reset only updates `grid_threshold_level` (not top_three). After threshold resets + broadcasts: avg still holds January peaks.
+- **0.3.0 Bug B model:** avg sensor's top_three IS threshold's top_three via reference assignment. Threshold resets to new `[]`, then broadcasts with that empty list. avg._threshold_state_change fires → `avg.attr["top_three"] = []` — January peaks wiped.
+
+**Confirmed numeric results (all 4 sensors):**
+
+| | 0.2.6 | 0.3.0 |
+|---|---|---|
+| avg_sensor after threshold reset | ✓ January peaks intact | ✗ [] (WIPED) |
+| Bug B triggered | NO | YES ⚠️ |
+| January peaks preserved | YES | NO |
+
+Example (sensor_1_power):
+- Jan top-3: Jan 3 17:00 (10228.8 W), Jan 14 18:00 (9679.0 W), Jan 8 18:00 (9502.8 W)
+- 0.2.6 after reset: avg_sensor still shows all three (safe)
+- 0.3.0 after reset: avg_sensor = [] (data loss)
