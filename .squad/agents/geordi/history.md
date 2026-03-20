@@ -117,3 +117,34 @@ Example (sensor_1_power):
 - Jan top-3: Jan 3 17:00 (10228.8 W), Jan 14 18:00 (9679.0 W), Jan 8 18:00 (9502.8 W)
 - 0.2.6 after reset: avg_sensor still shows all three (safe)
 - 0.3.0 after reset: avg_sensor = [] (data loss)
+
+---
+
+## 2026-03 Scribe Final Integration
+
+### Revised Analysis Merged into Team Decisions
+
+**Status:** Spock's revised issue #34 analysis merged into `.squad/decisions/decisions.md`
+
+**Key Updates Appended:**
+1. **Kapasitetsledd domain correction:** Monthly reset is **intentional and required**, not a bug. Norwegian grid operators measure top-3 peaks per calendar month.
+2. **Regression A (P0):** Average sensor goes stale when consumption exceeds all GRID_LEVELS — `get_level()` returns None, `thresholddata.on_next()` never fires, avg sensor doesn't receive updates.
+3. **Regression B (P0):** Reference assignment (`self.attr["top_three"] = threshold_data.top_three`) causes both sensors to share mutable list.
+4. **Bug A (P1, pre-existing):** No month field in top_three causes cross-month pollution on missed reset.
+
+### User Symptom Mapping Updated
+- **msandvold:** "Wrong days vs provider" → Bug A (cross-month contamination)
+- **ojm88:** "Values change after restart" → Regression A + B (stale avg sensor + reference sharing)
+- **erikaugl:** "Numbers up and down daily" → Regression A (avg sensor stale during high consumption)
+
+### Testing Strategy Confirmed
+- Synthetic CSV data (`sensor_*_january.csv`) confirmed production-ready for regression validation
+- Baseline harness (`test_harness.py`) with boundary-condition tests ready
+- All 4 sensors' top-3 peaks verified identical between 0.2.6 and 0.3.0 (logic intact; coupling fragility is the issue)
+
+### Recommended Fix Order
+1. **P0 — Regression A:** Remove `_state_change` short-circuit OR move `thresholddata.on_next()` outside `if found_threshold` guard
+2. **P0 — Regression B:** Change to shallow copy `list(threshold_data.top_three)`
+3. **P1 — Bug A:** Add `month` field to entries; validate on restore
+
+**Implementation Status:** Ready to code (Worf to author tests, implementation pending prioritisation)
