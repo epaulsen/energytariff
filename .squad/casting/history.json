@@ -1,0 +1,13 @@
+[
+  {
+    "assignment_id": "energytariff-2026-03-20",
+    "universe": "star-trek",
+    "created_at": "2026-03-20T09:53:11Z",
+    "requested_by": "Erling Paulsen",
+    "agents": [
+      { "name": "Spock", "role": "Lead & Reviewer" },
+      { "name": "Geordi", "role": "HA Developer" },
+      { "name": "Worf", "role": "Tester" }
+    ]
+  }
+]

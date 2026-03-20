@@ -1,0 +1,8 @@
+{
+  "version": "1.0",
+  "universe": "star-trek",
+  "universe_family": "Star Trek (TOS/TNG/DS9/VOY/ENT)",
+  "max_agents": 20,
+  "allow_overflow": true,
+  "overflow_strategy": "diegetic-expansion"
+}
