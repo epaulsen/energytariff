@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -69,13 +71,15 @@ def get_rounding_precision(config: dict[str, Any]) -> int:
     return int(precision)
 
 
-def convert_to_watt(data: any) -> float:
+def convert_to_watt(data: Any) -> float:
     """Converts input sensor data to watt, if needed"""
     if data.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
         return 0
 
     value = float(data.state)
-    unit = data.attributes["unit_of_measurement"]
+    unit = data.attributes.get("unit_of_measurement")
+    if unit is None:
+        return None
     if unit == "kW":
         value = value * 1000
     else:
@@ -85,7 +89,7 @@ def convert_to_watt(data: any) -> float:
 
 
 def calculate_top_three(state: EnergyData, top_three: Any) -> Any:
-    """Mainains the list of top three hours for a month"""
+    """Maintains the list of top three hours for a month"""
 
     if state is None:
         return top_three
@@ -97,8 +101,7 @@ def calculate_top_three(state: EnergyData, top_three: Any) -> Any:
     # Solar or wind production can cause the energy meter to have negative values
     # Set this to 0, as tariffs are only for consumption and we don't have negative
     # tariff values in the tariff config section.
-    if energy_used < 0:
-        energy_used = 0
+    energy_used = max(energy_used, 0)
 
     consumption = {
         "month": localtime.month,
@@ -107,25 +110,20 @@ def calculate_top_three(state: EnergyData, top_three: Any) -> Any:
         "energy": energy_used,
     }
 
-    # Case 1:Empty list. Uncricitally add, calculate level and return
-    if len(top_three) == 0:
-        # _LOGGER.debug("Adding first item")
+    # Case 1: Empty list. Uncritically add, calculate level and return
+    if not top_three:
         top_three.append(consumption)
         return top_three
 
     # Case 2: Items in list.  If any are same day as consumption-item,
     # update that one if energy is higher.  Recalculate and return
-    for i in range(len(top_three)):
+    for i, item in enumerate(top_three):
         # Entries without a month field are treated as same-month (backward compat)
-        entry_month = int(top_three[i].get("month", consumption["month"]))
-        if entry_month == int(consumption["month"]) and int(top_three[i]["day"]) == int(consumption["day"]):
-            if top_three[i]["energy"] < consumption["energy"]:
+        entry_month = int(item.get("month", consumption["month"]))
+        if entry_month == int(consumption["month"]) and int(item["day"]) == int(consumption["day"]):
+            if item["energy"] < consumption["energy"]:
                 top_three[i]["energy"] = consumption["energy"]
                 top_three[i]["hour"] = consumption["hour"]
-                # _LOGGER.debug(
-                #     "Updating current-day item to %s", consumption["energy"]
-                # )
-
             return top_three
 
     # Case 3: We are not on the same day as any items in the list,
@@ -135,14 +133,14 @@ def calculate_top_three(state: EnergyData, top_three: Any) -> Any:
         top_three.append(consumption)
         return top_three
 
-    # Case 4: Not same day, list has three element.
+    # Case 4: Not same day, list has three elements.
     # If lowest level has lower consumption, replace element,
     # recalculate and return
     top_three.sort(key=lambda x: x["energy"])
-    for i in range(len(top_three)):
-        if top_three[i]["energy"] < consumption["energy"]:
+    for i, item in enumerate(top_three):
+        if item["energy"] < consumption["energy"]:
             top_three[i] = consumption
             return top_three
 
-    # If we got this far, list has no changes, to return it as-is.
+    # If we got this far, list has no changes, so return it as-is.
     return top_three

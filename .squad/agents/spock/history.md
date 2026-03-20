@@ -29,4 +29,15 @@
 
 **Tests needed:** Unit test for `calculate_top_three` with cross-month data; restore integration test verifying `top_three` survives first threshold broadcast.
 
-**Full analysis:** `.squad/decisions/inbox/spock-issue-34-analysis.md`
+**Full analysis:** `.squad/decisions.md` (merged from inbox)
+
+---
+
+## 2026-03 Session Complete — Issue #34 Fix Shipped
+
+**Date:** 2026-03-20T12:20:28Z  
+**PR #39:** MERGED, all 26 tests passing  
+**Release Status:** SHIPPED  
+**Issue #34:** CLOSED
+
+All three regressions fixed and deployed. Worf's test suite passed review. Release shipped to production.

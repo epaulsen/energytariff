@@ -117,3 +117,11 @@ Three regression tests added to `tests/test_sensor.py`. All **PASS** on the curr
 - BehaviorSubject subscription order matters: threshold_sensor and avg_sensor both subscribe to `effectstate`; both callbacks fire on every `on_next()`
 - `venv` path: `.venv/bin/python -m pytest tests/test_sensor.py -v`
 
+## 2026-03 Session Complete — Issue #34 Fix Shipped
+
+**Date:** 2026-03-20T12:20:28Z  
+**PR #39:** MERGED, 26 tests passing  
+**Release Status:** SHIPPED  
+**Issue #34:** CLOSED
+
+Three regression tests validated all fixes. Release shipped to production.
