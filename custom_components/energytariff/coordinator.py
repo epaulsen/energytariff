@@ -8,7 +8,7 @@ from homeassistant.core import (
 
 
 class EnergyData:
-    """Class used to transmit sensor nofication via rx"""
+    """Class used to transmit sensor notification via rx"""
 
     def __init__(self, energy: float, effect: float, timestamp: datetime.datetime):
         self.energy_consumed = energy
