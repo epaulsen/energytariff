@@ -101,6 +101,7 @@ def calculate_top_three(state: EnergyData, top_three: Any) -> Any:
         energy_used = 0
 
     consumption = {
+        "month": localtime.month,
         "day": localtime.day,
         "hour": localtime.hour,
         "energy": energy_used,
@@ -115,7 +116,9 @@ def calculate_top_three(state: EnergyData, top_three: Any) -> Any:
     # Case 2: Items in list.  If any are same day as consumption-item,
     # update that one if energy is higher.  Recalculate and return
     for i in range(len(top_three)):
-        if int(top_three[i]["day"]) == int(consumption["day"]):
+        # Entries without a month field are treated as same-month (backward compat)
+        entry_month = int(top_three[i].get("month", consumption["month"]))
+        if entry_month == int(consumption["month"]) and int(top_three[i]["day"]) == int(consumption["day"]):
             if top_three[i]["energy"] < consumption["energy"]:
                 top_three[i]["energy"] = consumption["energy"]
                 top_three[i]["hour"] = consumption["hour"]
