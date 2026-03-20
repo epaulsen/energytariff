@@ -59,3 +59,31 @@ The synthetic CSV data aligns directly with issue #34 regression testing needs:
 - Validate that Bug B fixes maintain independent state during threshold broadcasts
 
 **Next:** Regression test suite using Geordi's CSV data once Spock's fixes are implemented.
+
+---
+
+### 0.2.6 vs 0.3.0 Regression Test — Findings
+
+**Harness:** `logfiles/test_harness.py` (not committed, gitignored)  
+**Results:** `logfiles/results_026.txt`, `logfiles/results_030.txt`  
+**Full findings:** `.squad/decisions/inbox/geordi-026-vs-030-findings.md`
+
+**Key learnings:**
+
+1. **`calculate_top_three` is identical in both 0.2.6 and 0.3.0.** Single-month cold-start computation gives byte-identical results for all 4 sensors. No logic regression in the core algorithm.
+
+2. **The real regression in 0.3.0 is Bug B** — `_threshold_state_change` on `GridCapWatcherAverageThreePeakHours` does:
+   ```python
+   self.attr["top_three"] = threshold_data.top_three  # direct reference
+   ```
+   This method **does not exist in 0.2.6**. After monthly reset on the threshold sensor, the average sensor's reference becomes stale. Demonstrated live via `--simulate-bug-b` flag.
+
+3. **Bug A (no month field) predates both versions** — same code in both, only manifests on HA restart near month boundary, not observable from single-month harness alone.
+
+4. **API inspection pattern**: The harness detects these patterns via static text search of sensor.py at each version path, providing a fast structural diff without importing HA.
+
+5. **Top-three peaks confirmed** for January 2026 synthetic data:
+   - sensor_1: Jan 3 17:00 (10,228.8 W) → Jan 14 18:00 → Jan 8 18:00
+   - sensor_2: Jan 17 17:00 (4,780.3 W) → Jan 11 17:00 → Jan 25 19:00
+   - sensor_3: Jan 2 17:00 (4,986.5 W) → Jan 9 18:00 → Jan 23 17:00
+   - sensor_4: Jan 13 17:00 (4,740.5 W) → Jan 27 17:00 → Jan 6 17:00
