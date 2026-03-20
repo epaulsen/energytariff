@@ -1,6 +1,6 @@
 """Test energytariff sensor platform."""
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from homeassistant.util import dt
 from homeassistant.const import (
@@ -467,3 +467,152 @@ async def test_sensor_units_of_measurement(hass, basic_config, config_with_limit
     assert energy_sensor._attr_native_unit_of_measurement == UnitOfEnergy.KILO_WATT_HOUR
     assert estimated_sensor._attr_native_unit_of_measurement == UnitOfEnergy.KILO_WATT_HOUR
     assert available_sensor._attr_native_unit_of_measurement == UnitOfPower.WATT
+
+
+# ---------------------------------------------------------------------------
+# Regression and bug tests — these should FAIL on unfixed 0.3.0 code
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_regression_a_exceeds_all_levels(hass, mock_coordinator):
+    """Regression A (P0 — 0.3.0 silent data loss):
+    When GRID_LEVELS is configured and consumption exceeds ALL configured
+    thresholds, GridCapWatcherCurrentEffectLevelThreshold.get_level() returns
+    None and never calls thresholddata.on_next().
+    GridCapWatcherAverageThreePeakHours._state_change() short-circuits when
+    levels are configured (returns None immediately), so it never independently
+    calculates top_three either.  The result: the avg sensor goes permanently
+    stale — top_three stays [] and _state stays None.
+
+    Correct behaviour: after 3 hours of consumption that each exceed the max
+    configured threshold, the avg sensor's top_three must contain 3 entries and
+    _state must be non-None.
+    """
+    config = {
+        CONF_EFFECT_ENTITY: "sensor.power_meter",
+        ROUNDING_PRECISION: 2,
+        GRID_LEVELS: [
+            {"name": "Low", "threshold": 2.0, "price": 50},
+            {"name": "Medium", "threshold": 5.0, "price": 100},
+        ],
+    }
+
+    threshold_sensor = GridCapWatcherCurrentEffectLevelThreshold(
+        hass, config, mock_coordinator
+    )
+    avg_sensor = GridCapWatcherAverageThreePeakHours(hass, config, mock_coordinator)
+
+    threshold_sensor.schedule_update_ha_state = Mock()
+    avg_sensor.schedule_update_ha_state = Mock()
+
+    # Feed 3 hours across 3 different days — all 7.0 kWh, exceeding the 5.0 max level.
+    base_ts = datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+    for day in [1, 2, 3]:
+        energy_data = EnergyData(7.0, 7000.0, base_ts.replace(day=day))
+        mock_coordinator.effectstate.on_next(energy_data)
+
+    # The avg sensor must have recorded the three peak hours.
+    assert len(avg_sensor.attr["top_three"]) == 3, (
+        f"Expected 3 entries in avg_sensor top_three, got "
+        f"{len(avg_sensor.attr['top_three'])}. "
+        "Bug: _state_change short-circuits when levels configured, and threshold "
+        "sensor never broadcasts when consumption exceeds all levels — avg sensor "
+        "goes permanently stale."
+    )
+    assert avg_sensor._state is not None, (
+        "Avg sensor _state must not be None after 3 hours of data."
+    )
+
+
+@pytest.mark.asyncio
+async def test_regression_b_reference_not_copy(hass, config_with_levels, mock_coordinator):
+    """Regression B (P0 — 0.3.0 reference assignment fragility):
+    GridCapWatcherAverageThreePeakHours._threshold_state_change does:
+        self.attr['top_three'] = threshold_data.top_three   # reference, not copy
+    After this assignment both sensors share the same mutable list object.
+    Any in-place mutation of the original list (e.g. list.clear(), list.sort(),
+    or item assignment by calculate_top_three) silently affects the avg sensor's
+    data too.
+
+    Correct behaviour: the avg sensor must keep its OWN independent copy of
+    top_three.  Mutating the originating list must not change the avg sensor's
+    data.
+    """
+    avg_sensor = GridCapWatcherAverageThreePeakHours(
+        hass, config_with_levels, mock_coordinator
+    )
+    avg_sensor.schedule_update_ha_state = Mock()
+
+    # Build a top_three list and broadcast it to the avg sensor via thresholddata.
+    source_list = [
+        {"day": 1, "hour": 10, "energy": 3.0},
+        {"day": 2, "hour": 11, "energy": 4.0},
+        {"day": 3, "hour": 12, "energy": 5.0},
+    ]
+    mock_coordinator.thresholddata.on_next(
+        GridThresholdData("Medium", 5.0, 100, source_list)
+    )
+
+    # Sanity-check: avg sensor should have received the three peaks.
+    assert len(avg_sensor.attr["top_three"]) == 3
+
+    # Now mutate the original list in-place (simulates what calculate_top_three
+    # does via .sort() / item assignment, or what _async_reset_meter triggers
+    # indirectly when the shared object is cleared before rebinding).
+    source_list.clear()
+
+    # avg sensor must NOT be affected — it should hold its own independent copy.
+    assert len(avg_sensor.attr["top_three"]) == 3, (
+        "avg_sensor top_three was silently wiped when the source list was cleared. "
+        "Bug: _threshold_state_change assigns a reference "
+        "(self.attr['top_three'] = threshold_data.top_three) instead of a copy. "
+        "Fix: self.attr['top_three'] = list(threshold_data.top_three)"
+    )
+
+
+def test_bug_a_month_collision_in_calculate_top_three():
+    """Bug A (P1 — pre-existing):
+    calculate_top_three stores only 'day' (1–31), not 'month'.  If the
+    monthly reset is missed (HA was down at the calendar boundary), old-month
+    entries persist.  When the same day number reappears in the new month,
+    calculate_top_three treats it as the *same* entry and either ignores the
+    new reading (if lower) or overwrites the old one (if higher).  The months
+    are never kept independent.
+
+    Correct behaviour: a February day-5 reading must be treated as independent
+    from a January day-5 entry.  After the fix, each entry carries a 'month'
+    field and the collision check uses (month, day), so both months' data
+    coexist in top_three rather than shadowing each other.
+    """
+    from custom_components.energytariff.utils import calculate_top_three
+
+    # January day 5, high consumption.
+    jan_ts = datetime(2025, 1, 5, 8, 0, 0, tzinfo=timezone.utc)
+    jan_energy = EnergyData(5.0, 5000.0, jan_ts)
+
+    top_three = []
+    top_three = calculate_top_three(jan_energy, top_three)
+
+    assert len(top_three) == 1
+    assert top_three[0]["day"] == 5
+
+    # Monthly reset was missed — top_three still contains the January entry.
+    # February day 5 arrives with a lower energy value (2.0 kWh).
+    feb_ts = datetime(2025, 2, 5, 9, 0, 0, tzinfo=timezone.utc)
+    feb_energy = EnergyData(2.0, 2000.0, feb_ts)
+
+    top_three = calculate_top_three(feb_energy, top_three)
+
+    # The February entry must be represented independently (carries month=2).
+    # Currently FAILS because calculate_top_three only checks 'day', so Feb day-5
+    # collides with Jan day-5.  Since 2.0 < 5.0 the Feb reading is silently ignored
+    # and 'month' is never stored.
+    assert any(
+        e.get("month") == 2 and int(e["day"]) == 5 for e in top_three
+    ), (
+        f"No February (month=2) day-5 entry found in top_three: {top_three}. "
+        "Bug: calculate_top_three uses only 'day' for collision detection, so "
+        "February day-5 shadows/matches January day-5 instead of being tracked "
+        "independently."
+    )
+

@@ -76,3 +76,44 @@
 4. After Geordi implements fixes: all tests **pass on fixed 0.3.0**
 
 **Status:** Ready to author; waiting for fix implementation to validate test suite.
+
+---
+
+## 2026-03 Worf: Regression Tests Written (Issue #34)
+
+### Discovery: Fixes Already Applied
+
+When I went to write the failing regression tests, I discovered that Geordi had **already committed all three fixes** before the squad was formally tasked with this work:
+
+- `956f4a0` — Removed `_state_change` short-circuit in avg sensor; added `thresholddata` subscription → **Regression A fixed**
+- Same commit — Changed reference assignment to `list(threshold_data.top_three)` → **Regression B fixed**  
+- `calculate_top_three` in `utils.py` — Added `month` field + (month, day) collision detection → **Bug A fixed**
+
+### Tests Written
+
+Three regression tests added to `tests/test_sensor.py`. All **PASS** on the current fixed code and **FAIL** when fixes are reverted (confirmed by reversion testing).
+
+| Test | File | Status on fixed code | Would fail if... |
+|------|------|----------------------|-----------------|
+| `test_regression_a_exceeds_all_levels` | test_sensor.py | PASS | `_state_change` short-circuit re-added |
+| `test_regression_b_reference_not_copy` | test_sensor.py | PASS | `list()` copy replaced by reference assignment |
+| `test_bug_a_month_collision_in_calculate_top_three` | test_sensor.py | PASS | `month` field removed from `calculate_top_three` |
+
+### Test Patterns Used
+
+- `@pytest.mark.asyncio` with `hass` + `mock_coordinator` fixtures for sensor integration tests
+- Create both `GridCapWatcherCurrentEffectLevelThreshold` and `GridCapWatcherAverageThreePeakHours` with the same coordinator to test the full reactive subscription chain
+- `sensor.schedule_update_ha_state = Mock()` to suppress HA state update calls
+- `mock_coordinator.effectstate.on_next(EnergyData(...))` to inject data through the whole pipeline
+- `mock_coordinator.thresholddata.on_next(GridThresholdData(...))` to inject directly into avg sensor's threshold subscription
+- For Bug A: call `calculate_top_three` directly (no HA infrastructure needed) — a plain `def` test (no asyncio)
+- Reversion testing: temporarily patch source, run pytest in subprocess, restore — confirms test is pinning the right behaviour
+
+### Key Codebase Observations
+
+- `GridCapacityCoordinator` uses RxPY `BehaviorSubject` — replays last value to new subscribers; initial value is `None`
+- Both sensors guard against `None` inputs at start of callbacks
+- `calculate_top_three` mutates its input list in-place AND returns it (same object) — important for reference/copy reasoning
+- BehaviorSubject subscription order matters: threshold_sensor and avg_sensor both subscribe to `effectstate`; both callbacks fire on every `on_next()`
+- `venv` path: `.venv/bin/python -m pytest tests/test_sensor.py -v`
+
