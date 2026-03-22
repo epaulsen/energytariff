@@ -34,6 +34,10 @@ TARGET_ENERGY = "target_energy"
 
 RESET_TOP_THREE = "energytariff_reset_top_three_hours"
 
+# Numeric constants
+SECONDS_PER_HOUR = 3600
+WATTS_PER_KW = 1000
+
 # Defaults
 DEFAULT_NAME = DOMAIN
 
