@@ -169,3 +169,12 @@ Example (sensor_1_power):
 **Issue #34:** CLOSED
 
 All three regressions fixed and deployed to production. See `.squad/orchestration-log/` and `.squad/log/` for session details.
+
+### Issue #22 — LEVEL_PRICE Template Support
+
+- `vol.Any(cv.Number, cv.template)` — `cv.Number` must be FIRST so ints/floats are stored as numbers, not template strings.
+- Template pre-processing belongs in `__init__` (once, with `hass`), not in `calculate_level()` (per-update).
+- `Template.render(parse_result=True)` is synchronous — safe inside `@callback` and regular methods.
+- Always guard template render with `except (TemplateError, ValueError)` and return `False` for graceful degradation.
+- The main `venv` uses Python 3.14 which has a pre-existing `ast.Str` incompatibility with the installed pytest version. Use `venv312/` (Python 3.12) for running tests.
+- **`cv.template` already converts raw YAML strings to `Template` objects** before `__init__` runs. Never use `isinstance(x, str)` to detect template values — by that point they are already `Template` instances. The correct pattern to wire `hass` is: `if isinstance(price_raw, template_helper.Template): price_raw.hass = hass`. Creating a new `Template(str, hass)` from a string check is dead code and leaves `.hass=None`, causing runtime crashes on render.

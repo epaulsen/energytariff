@@ -10,6 +10,8 @@ from homeassistant.const import (
     UnitOfPower,
 )
 from homeassistant.core import Event, EventStateChangedData
+from homeassistant.exceptions import TemplateError
+import voluptuous as vol
 from custom_components.energytariff.sensor import (
     async_setup_platform,
     GridCapWatcherEnergySensor,
@@ -20,6 +22,7 @@ from custom_components.energytariff.sensor import (
     GridCapacityWatcherCurrentLevelName,
     GridCapacityWatcherCurrentLevelPrice,
     _restore_top_three,
+    LEVEL_SCHEMA,
 )
 from custom_components.energytariff.coordinator import (
     GridCapacityCoordinator,
@@ -29,6 +32,7 @@ from custom_components.energytariff.coordinator import (
 from custom_components.energytariff.const import (
     CONF_EFFECT_ENTITY,
     GRID_LEVELS,
+    LEVEL_PRICE,
     MAX_EFFECT_ALLOWED,
     TARGET_ENERGY,
     ROUNDING_PRECISION,
@@ -735,3 +739,200 @@ async def test_restore_top_three_bug_b_still_fixed(hass, config_with_levels, moc
         "avg_sensor top_three was wiped when threshold source list was cleared — "
         "Bug B shallow-copy fix has been reverted."
     )
+# --- Issue #22: Template pricing tests ---
+# These tests cover the LEVEL_PRICE template feature.
+# Tests 1 and 5 pass against current code.
+# Tests 2-4 and 6 are spec-driven and will pass once Geordi's implementation lands.
+
+
+@pytest.mark.asyncio
+async def test_level_price_static_number_unchanged(hass, config_with_levels, mock_coordinator):
+    """Regression guard: a numeric price (int or float) must work exactly as before.
+
+    Verifies that after calculate_level() fires, thresholddata.on_next() receives a
+    GridThresholdData whose price is the correct float — no regression from adding
+    template support.
+    """
+    sensor = GridCapWatcherCurrentEffectLevelThreshold(
+        hass, config_with_levels, mock_coordinator
+    )
+    sensor.schedule_update_ha_state = Mock()
+
+    # Average of 3.0 kWh -> "Medium" level, price=100
+    sensor.attr["top_three"] = [
+        {"day": 1, "hour": 10, "energy": 2.0},
+        {"day": 2, "hour": 11, "energy": 3.0},
+        {"day": 3, "hour": 12, "energy": 4.0},
+    ]
+
+    received: list[GridThresholdData] = []
+    mock_coordinator.thresholddata.subscribe(received.append)
+    # Drain the initial None emitted by BehaviorSubject
+    received.clear()
+
+    result = sensor.calculate_level()
+
+    assert result is True
+    assert len(received) == 1
+    assert received[0].price == 100.0
+    assert isinstance(received[0].price, float)
+
+
+@pytest.mark.asyncio
+async def test_level_price_template_renders_correctly(hass, mock_coordinator):
+    """Happy path: a Template object stored as the price renders to a float correctly.
+
+    Simulates what Geordi's __init__ pre-processing will do: convert the raw template
+    string to a Template object. We inject the mock directly so the test is independent
+    of the __init__ implementation detail — what matters is that calculate_level()
+    resolves it and broadcasts the rendered float.
+    """
+    from homeassistant.helpers import template as template_helper
+
+    config = {
+        CONF_EFFECT_ENTITY: "sensor.power_meter",
+        ROUNDING_PRECISION: 2,
+        GRID_LEVELS: [
+            {"name": "Low", "threshold": 2.0, "price": 50},
+            {"name": "Medium", "threshold": 5.0, "price": 100},
+        ],
+    }
+
+    sensor = GridCapWatcherCurrentEffectLevelThreshold(hass, config, mock_coordinator)
+    sensor.schedule_update_ha_state = Mock()
+
+    # Replace the numeric price with a mock Template object that renders to 175.0
+    mock_template = Mock(spec=template_helper.Template)
+    mock_template.render.return_value = 175.0
+    sensor._levels[0][LEVEL_PRICE] = mock_template  # "Low" level
+
+    # Average of 1.0 kWh -> "Low" level (threshold 2.0, price now a template)
+    sensor.attr["top_three"] = [
+        {"day": 1, "hour": 10, "energy": 1.0},
+    ]
+
+    received: list[GridThresholdData] = []
+    mock_coordinator.thresholddata.subscribe(received.append)
+    received.clear()
+
+    result = sensor.calculate_level()
+
+    assert result is True
+    assert len(received) == 1
+    assert received[0].price == 175.0
+    mock_template.render.assert_called_once_with(parse_result=True)
+
+
+@pytest.mark.asyncio
+async def test_level_price_template_entity_unavailable(hass, mock_coordinator):
+    """Graceful degradation: template raises TemplateError (entity unavailable).
+
+    calculate_level() must return False, must NOT call thresholddata.on_next(),
+    and must not raise an unhandled exception.
+    """
+    from homeassistant.helpers import template as template_helper
+
+    config = {
+        CONF_EFFECT_ENTITY: "sensor.power_meter",
+        ROUNDING_PRECISION: 2,
+        GRID_LEVELS: [
+            {"name": "Low", "threshold": 2.0, "price": 50},
+        ],
+    }
+
+    sensor = GridCapWatcherCurrentEffectLevelThreshold(hass, config, mock_coordinator)
+    sensor.schedule_update_ha_state = Mock()
+
+    # Template that raises TemplateError — simulates a missing/unavailable entity
+    mock_template = Mock(spec=template_helper.Template)
+    mock_template.render.side_effect = TemplateError(Exception("unavailable"))
+    sensor._levels[0][LEVEL_PRICE] = mock_template
+
+    sensor.attr["top_three"] = [
+        {"day": 1, "hour": 10, "energy": 1.0},
+    ]
+
+    received: list[GridThresholdData] = []
+    mock_coordinator.thresholddata.subscribe(received.append)
+    received.clear()
+
+    result = sensor.calculate_level()
+
+    assert result is False
+    assert len(received) == 0, "thresholddata.on_next() must NOT be called when template fails"
+
+
+@pytest.mark.asyncio
+async def test_level_price_template_non_numeric_result(hass, mock_coordinator):
+    """ValueError path: template renders to a non-numeric string.
+
+    calculate_level() must catch the ValueError, log it, return False, and must NOT
+    call thresholddata.on_next(). No unhandled exception must propagate.
+    """
+    from homeassistant.helpers import template as template_helper
+
+    config = {
+        CONF_EFFECT_ENTITY: "sensor.power_meter",
+        ROUNDING_PRECISION: 2,
+        GRID_LEVELS: [
+            {"name": "Low", "threshold": 2.0, "price": 50},
+        ],
+    }
+
+    sensor = GridCapWatcherCurrentEffectLevelThreshold(hass, config, mock_coordinator)
+    sensor.schedule_update_ha_state = Mock()
+
+    # Template renders to a non-numeric string — float() will raise ValueError
+    mock_template = Mock(spec=template_helper.Template)
+    mock_template.render.return_value = "not-a-number"
+    sensor._levels[0][LEVEL_PRICE] = mock_template
+
+    sensor.attr["top_three"] = [
+        {"day": 1, "hour": 10, "energy": 1.0},
+    ]
+
+    received: list[GridThresholdData] = []
+    mock_coordinator.thresholddata.subscribe(received.append)
+    received.clear()
+
+    result = sensor.calculate_level()
+
+    assert result is False
+    assert len(received) == 0, "thresholddata.on_next() must NOT be called when price is non-numeric"
+
+
+def test_schema_accepts_template_string():
+    """Schema validation: LEVEL_SCHEMA must accept a valid Jinja2 template string for price.
+
+    Also verifies that static int and float prices continue to be accepted — the new
+    vol.Any(cv.Number, cv.template) validator must not break existing configs.
+
+    NOTE: cv.template converts the validated string to a Template object, so we check
+    type rather than string equality for the template case.
+    """
+    from homeassistant.helpers import template as template_helper
+
+    # Static int — must still pass
+    result_int = LEVEL_SCHEMA({"name": "Low", "threshold": 2.0, "price": 135})
+    assert result_int["price"] == 135
+
+    # Static float — must still pass
+    result_float = LEVEL_SCHEMA({"name": "Medium", "threshold": 5.0, "price": 135.5})
+    assert result_float["price"] == 135.5
+
+    # Valid Jinja2 template string — must now be accepted (Issue #22).
+    # cv.template returns a Template object, not the raw string.
+    result_template = LEVEL_SCHEMA(
+        {"name": "High", "threshold": 8.0, "price": "{{ states('sensor.electricity_price') }}"}
+    )
+    assert isinstance(result_template["price"], template_helper.Template)
+
+
+def test_schema_rejects_invalid_template():
+    """Schema validation: LEVEL_SCHEMA must reject a malformed Jinja2 template for price.
+
+    A string like '{{ unclosed' has invalid Jinja2 syntax and must raise a
+    voluptuous Invalid exception at config-load time, not at runtime.
+    """
+    with pytest.raises(vol.Invalid):
+        LEVEL_SCHEMA({"name": "Low", "threshold": 2.0, "price": "{{ unclosed"})

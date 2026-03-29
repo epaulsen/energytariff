@@ -125,3 +125,42 @@ Three regression tests added to `tests/test_sensor.py`. All **PASS** on the curr
 **Issue #34:** CLOSED
 
 Three regression tests validated all fixes. Release shipped to production.
+
+## 2026-03 Worf: Issue #22 Template Pricing Tests Written
+
+**Date:** 2026-03  
+**Issue:** #22 — LEVEL_PRICE template support  
+**Status:** 6 tests written; all 32 tests pass (26 prior + 6 new)
+
+### Discovery: Implementation Already Landed
+
+When writing the tests, Geordi had already committed the full implementation:
+- `LEVEL_SCHEMA` updated to `vol.Any(cv.Number, cv.template)` (line 64)
+- `calculate_level()` refactored with `isinstance(price_value, template_helper.Template)` check
+- Template resolution via `price_value.render(parse_result=True)` with `(TemplateError, ValueError)` guard
+- `__init__` pre-processing loop converts string prices to `Template` objects at startup
+
+### Tests Written (appended to `tests/test_sensor.py`)
+
+| Test | Scope | Result |
+|------|-------|--------|
+| `test_level_price_static_number_unchanged` | Regression guard — numeric price still works | PASS |
+| `test_level_price_template_renders_correctly` | Happy path — mock Template.render() returns float | PASS |
+| `test_level_price_template_entity_unavailable` | TemplateError caught, returns False, no on_next | PASS |
+| `test_level_price_template_non_numeric_result` | ValueError caught, returns False, no on_next | PASS |
+| `test_schema_accepts_template_string` | vol.Any(cv.Number, cv.template) accepts ints, floats, templates | PASS |
+| `test_schema_rejects_invalid_template` | Malformed Jinja2 raises vol.Invalid | PASS |
+
+### Key Test Pattern: Inject Mock Template Directly
+
+Rather than going through `__init__` pre-processing, tests 2-4 inject a `Mock(spec=template_helper.Template)` directly into `sensor._levels[i][LEVEL_PRICE]` after construction. This decouples the test from `__init__` implementation detail — only `calculate_level()` behavior is under test.
+
+### Key Codebase Observation
+
+`cv.template` (in voluptuous) converts the validated string to a `homeassistant.helpers.template.Template` object — NOT a raw string. Schema test assertions must check `isinstance(..., template_helper.Template)`, not string equality.
+
+### Imports Added to test_sensor.py
+
+- `from homeassistant.exceptions import TemplateError`
+- `import voluptuous as vol`
+- `LEVEL_SCHEMA` and `LEVEL_PRICE` from their respective modules

@@ -14,6 +14,30 @@
 
 ## Learnings
 
+### Issue #22 — Templating in LEVEL_PRICE (2025-07)
+
+**How LEVEL_PRICE flows at runtime:**
+
+1. `LEVEL_SCHEMA` validates config at load time. `LEVEL_PRICE` is stored raw (int/float) in `_levels`.
+2. `GridCapWatcherCurrentEffectLevelThreshold.__init__` stores `self._levels = config.get(GRID_LEVELS)` — a list of dicts.
+3. On every energy state change, `_state_change` → `calculate_level()` → `get_level()` picks the matching level dict.
+4. `calculate_level()` at line 405 does `float(found_threshold["price"])` — direct cast, no indirection.
+5. The float is wrapped in `GridThresholdData` and broadcast via `self._coordinator.thresholddata.on_next(...)`.
+6. `GridCapacityWatcherCurrentLevelPrice._threshold_state_change` receives it as `state.price` and sets sensor state.
+
+**Key architectural insight:** `calculate_level()` is a synchronous method called from a synchronous `@callback`. Template resolution must use `Template.render()` (sync), not `async_render()`. Template objects should be pre-built at init time (not on every update cycle) to avoid repeated construction overhead.
+
+**Safe template pre-processing pattern:**
+```python
+# In __init__, after self._levels = config.get(GRID_LEVELS):
+if self._levels:
+    for level in self._levels:
+        if isinstance(level[LEVEL_PRICE], str):
+            level[LEVEL_PRICE] = template_helper.Template(level[LEVEL_PRICE], hass)
+```
+
+**No other sensors need changes** — `GridCapacityWatcherCurrentLevelName`, `GridCapacityWatcherCurrentLevelPrice`, and `GridCapWatcherAverageThreePeakHours` all receive `price` as a pre-resolved float via `GridThresholdData`. The resolution point is singular: `calculate_level()` in `GridCapWatcherCurrentEffectLevelThreshold`.
+
 ### Issue #34 — "Average peak hour energy" regression in 0.3.0 (2025-07)
 
 **Two root causes identified:**
@@ -41,3 +65,48 @@
 **Issue #34:** CLOSED
 
 All three regressions fixed and deployed. Worf's test suite passed review. Release shipped to production.
+
+---
+
+## Issue #22 Review — Template Support for LEVEL_PRICE (2025-07)
+
+**Status:** REJECTED — returned to Geordi for one targeted fix
+
+**What was correct:**
+- Schema: `vol.Any(cv.Number, cv.template)` — correct order, backward compatible
+- Imports: `template_helper` and `TemplateError` at module level ✓
+- `calculate_level()`: uses `Template.render(parse_result=True)` (sync, correct for `@callback`); catches `TemplateError` + `ValueError`; does not broadcast on failure ✓
+- No `min=0` added (negatives preserved) ✓
+- `LEVEL_THRESHOLD` untouched ✓
+- 32/32 tests pass ✓
+
+**The defect:**
+
+`__init__` pre-processing checks `isinstance(price_raw, str)` — but `cv.template` in the schema already converts the raw YAML string to a `Template(hass=None)` before `__init__` runs. Verified: `cv.template("{{ ... }}")` returns a Template with `hass=None`, not a str. The `isinstance(price_raw, str)` check is dead code; Template objects loaded from real YAML configs will have `hass=None` and fail when `render()` tries to access HA state.
+
+**Fix required (Geordi):**
+```python
+if isinstance(price_raw, template_helper.Template):
+    price_raw.hass = hass
+```
+Also add one test that passes a template string through the schema into `__init__` and asserts `price.hass is hass`.
+
+**Tests miss this** because all 6 Issue #22 tests inject mock Templates directly into `_levels` *after* construction — bypassing the `__init__` path entirely.
+
+**Verdict file:** `.squad/decisions/inbox/spock-issue-22-review.md`
+
+---
+
+## Issue #22 Final Approval — Template Support for LEVEL_PRICE (2025-07)
+
+**Status:** APPROVED — all criteria met
+
+**Fix verified:**
+- `isinstance(price_raw, template_helper.Template)` at line 341: correctly targets Template objects produced by `cv.template` schema validation — not dead code
+- `price_raw.hass = hass` at line 342: binds hass to template at init time so `render()` can access HA state at runtime
+- `calculate_level()` at line 408–419: sync `render(parse_result=True)`, catches `TemplateError`/`ValueError`, returns False on failure — no corrupt broadcast
+- No unintended changes: `LEVEL_THRESHOLD` untouched, schema order `vol.Any(cv.Number, cv.template)` preserved, no `min=0` added
+
+**Test result:** 32/32 passed (6 new Issue #22 tests + 26 prior regression tests)
+
+**Verdict file:** `.squad/decisions/inbox/spock-issue-22-final.md`
