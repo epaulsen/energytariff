@@ -19,6 +19,7 @@ from custom_components.energytariff.sensor import (
     GridCapWatcherCurrentEffectLevelThreshold,
     GridCapacityWatcherCurrentLevelName,
     GridCapacityWatcherCurrentLevelPrice,
+    _restore_top_three,
 )
 from custom_components.energytariff.coordinator import (
     GridCapacityCoordinator,
@@ -616,3 +617,121 @@ def test_bug_a_month_collision_in_calculate_top_three():
         "independently."
     )
 
+
+
+# --- Upgrade migration: _restore_top_three ---
+#
+# These tests guard the fix for the upgrade bug where users on 0.3.0/0.3.1 lost
+# all top_three data on first HA restart.  Old entries had no 'month' field; the
+# unfixed code treated missing month as None and discarded every such entry.
+#
+# The fix: item.get("month", current_month) — missing month defaults to
+# current_month so legacy entries are preserved.
+
+
+def test_restore_top_three_legacy_no_month_field():
+    """Regression guard: legacy entries (no 'month' key) must be preserved on upgrade."""
+    from homeassistant.util import dt as ha_dt
+
+    current_month = ha_dt.as_local(ha_dt.now()).month
+    savedstate = Mock()
+    savedstate.attributes = {
+        "top_three": [
+            {"day": 3, "hour": 17, "energy": 10.2},
+            {"day": 14, "hour": 18, "energy": 9.7},
+            {"day": 8, "hour": 18, "energy": 9.5},
+        ]
+    }
+    attr = {"top_three": []}
+    _restore_top_three(savedstate, attr)
+
+    assert len(attr["top_three"]) == 3, (
+        f"Expected 3 legacy entries to be restored, got {len(attr['top_three'])}. "
+        "Bug: _restore_top_three treated missing 'month' as None and discarded all "
+        "legacy entries, wiping top_three on first restart after upgrade from 0.3.0/0.3.1."
+    )
+    for entry in attr["top_three"]:
+        assert entry["month"] == current_month
+
+
+def test_restore_top_three_prior_month_entries_discarded():
+    """Prior-month entries with explicit month field must still be discarded."""
+    from homeassistant.util import dt as ha_dt
+
+    current_month = ha_dt.as_local(ha_dt.now()).month
+    prior_month = 12 if current_month == 1 else current_month - 1
+    savedstate = Mock()
+    savedstate.attributes = {
+        "top_three": [
+            {"month": prior_month, "day": 5, "hour": 10, "energy": 8.0},
+            {"month": prior_month, "day": 12, "hour": 14, "energy": 7.5},
+        ]
+    }
+    attr = {"top_three": []}
+    _restore_top_three(savedstate, attr)
+
+    assert len(attr["top_three"]) == 0, (
+        f"Expected prior-month (month={prior_month}) entries to be discarded, "
+        f"got: {attr['top_three']}"
+    )
+
+
+def test_restore_top_three_mixed_format():
+    """Mixed state: legacy (no month), modern current-month, prior-month — only current survive."""
+    from homeassistant.util import dt as ha_dt
+
+    current_month = ha_dt.as_local(ha_dt.now()).month
+    prior_month = 12 if current_month == 1 else current_month - 1
+    savedstate = Mock()
+    savedstate.attributes = {
+        "top_three": [
+            {"day": 3, "hour": 17, "energy": 10.2},                         # legacy: no month
+            {"month": current_month, "day": 14, "hour": 18, "energy": 9.7}, # modern current
+            {"month": prior_month, "day": 8, "hour": 18, "energy": 9.5},    # prior month
+        ]
+    }
+    attr = {"top_three": []}
+    _restore_top_three(savedstate, attr)
+
+    assert len(attr["top_three"]) == 2, (
+        f"Expected 2 current-month entries (1 legacy + 1 modern), "
+        f"got {len(attr['top_three'])}: {attr['top_three']}"
+    )
+    surviving_months = {e["month"] for e in attr["top_three"]}
+    assert surviving_months == {current_month}
+
+
+@pytest.mark.asyncio
+async def test_restore_top_three_bug_b_still_fixed(hass, config_with_levels, mock_coordinator):
+    """Guard Bug B: avg sensor top_three must not be wiped when threshold source list is cleared."""
+    avg_sensor = GridCapWatcherAverageThreePeakHours(
+        hass, config_with_levels, mock_coordinator
+    )
+    avg_sensor.schedule_update_ha_state = Mock()
+
+    savedstate = Mock()
+    savedstate.attributes = {
+        "top_three": [
+            {"day": 3, "hour": 17, "energy": 10.2},
+            {"day": 14, "hour": 18, "energy": 9.7},
+            {"day": 8, "hour": 18, "energy": 9.5},
+        ]
+    }
+    _restore_top_three(savedstate, avg_sensor.attr)
+    assert len(avg_sensor.attr["top_three"]) == 3, "Precondition: legacy restore must succeed"
+
+    source_list = [
+        {"month": 1, "day": 3, "hour": 17, "energy": 10.2},
+        {"month": 1, "day": 14, "hour": 18, "energy": 9.7},
+        {"month": 1, "day": 8, "hour": 18, "energy": 9.5},
+    ]
+    mock_coordinator.thresholddata.on_next(
+        GridThresholdData("High", 8.0, 200, source_list)
+    )
+    assert len(avg_sensor.attr["top_three"]) == 3
+
+    source_list.clear()  # simulate threshold sensor monthly reset
+    assert len(avg_sensor.attr["top_three"]) == 3, (
+        "avg_sensor top_three was wiped when threshold source list was cleared — "
+        "Bug B shallow-copy fix has been reverted."
+    )
