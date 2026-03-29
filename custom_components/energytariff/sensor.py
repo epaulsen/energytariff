@@ -111,8 +111,8 @@ def _restore_top_three(savedstate: Any, attr: dict) -> None:
         return
     current_month = dt.as_local(dt.now()).month
     for item in savedstate.attributes["top_three"]:
-        item_month = item.get("month", None)
-        if item_month is None or int(item_month) != current_month:
+        item_month = int(item.get("month", current_month))
+        if item_month != current_month:
             continue
         attr["top_three"].append(
             {
