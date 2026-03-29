@@ -125,3 +125,74 @@ Three regression tests added to `tests/test_sensor.py`. All **PASS** on the curr
 **Issue #34:** CLOSED
 
 Three regression tests validated all fixes. Release shipped to production.
+
+## 2026-03 Worf: Issue #22 Template Pricing Tests Written
+
+**Date:** 2026-03  
+**Issue:** #22 — LEVEL_PRICE template support  
+**Status:** 6 tests written; all 32 tests pass (26 prior + 6 new)
+
+### Discovery: Implementation Already Landed
+
+When writing the tests, Geordi had already committed the full implementation:
+- `LEVEL_SCHEMA` updated to `vol.Any(cv.Number, cv.template)` (line 64)
+- `calculate_level()` refactored with `isinstance(price_value, template_helper.Template)` check
+- Template resolution via `price_value.render(parse_result=True)` with `(TemplateError, ValueError)` guard
+- `__init__` pre-processing loop converts string prices to `Template` objects at startup
+
+### Tests Written (appended to `tests/test_sensor.py`)
+
+| Test | Scope | Result |
+|------|-------|--------|
+| `test_level_price_static_number_unchanged` | Regression guard — numeric price still works | PASS |
+| `test_level_price_template_renders_correctly` | Happy path — mock Template.render() returns float | PASS |
+| `test_level_price_template_entity_unavailable` | TemplateError caught, returns False, no on_next | PASS |
+| `test_level_price_template_non_numeric_result` | ValueError caught, returns False, no on_next | PASS |
+| `test_schema_accepts_template_string` | vol.Any(cv.Number, cv.template) accepts ints, floats, templates | PASS |
+| `test_schema_rejects_invalid_template` | Malformed Jinja2 raises vol.Invalid | PASS |
+
+### Key Test Pattern: Inject Mock Template Directly
+
+Rather than going through `__init__` pre-processing, tests 2-4 inject a `Mock(spec=template_helper.Template)` directly into `sensor._levels[i][LEVEL_PRICE]` after construction. This decouples the test from `__init__` implementation detail — only `calculate_level()` behavior is under test.
+
+### Key Codebase Observation
+
+`cv.template` (in voluptuous) converts the validated string to a `homeassistant.helpers.template.Template` object — NOT a raw string. Schema test assertions must check `isinstance(..., template_helper.Template)`, not string equality.
+
+### Imports Added to test_sensor.py
+
+- `from homeassistant.exceptions import TemplateError`
+- `import voluptuous as vol`
+- `LEVEL_SCHEMA` and `LEVEL_PRICE` from their respective modules
+
+## 2026-03 Worf: _restore_top_three Upgrade Migration Tests Written
+
+**Date:** 2026-03
+**Branch:** feature/issue-22 (working tree, not yet committed)
+**Trigger:** Upgrade bug where users on 0.3.0/0.3.1 lost all top_three data on first HA restart after upgrade.
+
+### Bug Context
+
+`_restore_top_three()` in `sensor.py` (used by both `GridCapWatcherCurrentEffectLevelThreshold` and `GridCapWatcherAverageThreePeakHours` in `async_added_to_hass`) previously defaulted missing `month` to `None`, then compared `None != current_month` — discarding every legacy entry. Geordi's fix (unstaged diff on disk): `item.get("month", None)` → `item.get("month", current_month)`.
+
+### Tests Written
+
+Added `_restore_top_three` to the import block, then added 4 tests under `# --- Upgrade migration: _restore_top_three ---`:
+
+| Test | Type | Passes on fixed code? | Would fail if... |
+|------|------|----------------------|-----------------|
+| `test_restore_top_three_legacy_no_month_field` | plain `def` | PASS | fix reverted (month defaults to None) |
+| `test_restore_top_three_prior_month_entries_discarded` | plain `def` | PASS | prior-month cleanup removed |
+| `test_restore_top_three_mixed_format` | plain `def` | PASS | fix reverted OR prior-month cleanup removed |
+| `test_restore_top_three_bug_b_still_fixed` | `@pytest.mark.asyncio` | PASS | `list()` copy reverted to reference assignment |
+
+### Test Patterns Used
+
+- Tests 1–3: plain `def` (no async, no hass/coordinator) — call `_restore_top_three` directly with a `Mock()` savedstate. Same pattern as `test_bug_a_month_collision_in_calculate_top_three`.
+- Test 4: `@pytest.mark.asyncio` with `hass`, `config_with_levels`, `mock_coordinator` — creates `GridCapWatcherAverageThreePeakHours`, calls `_restore_top_three` on `avg_sensor.attr`, then broadcasts via `mock_coordinator.thresholddata.on_next()`, then clears source list to confirm copy independence.
+- For "prior month" entries: compute `prior_month = 12 if current_month == 1 else current_month - 1` at runtime — no time-patching needed.
+- Import: added `_restore_top_three` to the existing `from custom_components.energytariff.sensor import (...)` block.
+
+### Key Observation
+
+Geordi's fix was already present as an unstaged change in the working tree when tests were written. All 4 tests pass immediately (36/36 total). The comment block above the tests documents which tests were designed as FAIL-before-fix/PASS-after-fix regression guards.

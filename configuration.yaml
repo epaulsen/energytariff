@@ -25,6 +25,8 @@ sensor:
       - name: "Trinn 1: 0-2 kWh"
         threshold: 2
         price: 135
+        # price also accepts a Jinja2 template, e.g.:
+        # price: "{{ states('input_number.tariff_level_1') | float }}"
       - name: "Trinn 2: 2-5 kWh"
         threshold: 5
         price: 170
