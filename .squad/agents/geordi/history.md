@@ -178,3 +178,28 @@ All three regressions fixed and deployed to production. See `.squad/orchestratio
 - Always guard template render with `except (TemplateError, ValueError)` and return `False` for graceful degradation.
 - The main `venv` uses Python 3.14 which has a pre-existing `ast.Str` incompatibility with the installed pytest version. Use `venv312/` (Python 3.12) for running tests.
 - **`cv.template` already converts raw YAML strings to `Template` objects** before `__init__` runs. Never use `isinstance(x, str)` to detect template values — by that point they are already `Template` instances. The correct pattern to wire `hass` is: `if isinstance(price_raw, template_helper.Template): price_raw.hass = hass`. Creating a new `Template(str, hass)` from a string check is dead code and leaves `.hass=None`, causing runtime crashes on render.
+
+---
+
+## 2026-03 Upgrade Migration Fix — `_restore_top_three` month default
+
+**Task:** Fix upgrade migration bug where users on 0.3.0/0.3.1 (pre-PR#39) lose all `top_three` data on restart.
+
+**Root Cause:** `_restore_top_three()` defaulted missing `month` field to `None`, then discarded every entry where `month is None`. Entries saved before PR#39 (which added the `month` field) had no `month` key, so all were dropped.
+
+**Fix applied** (`custom_components/energytariff/sensor.py`, `_restore_top_three`):
+```python
+# Before
+item_month = item.get("month", None)
+if item_month is None or int(item_month) != current_month:
+    continue
+
+# After
+item_month = int(item.get("month", current_month))
+if item_month != current_month:
+    continue
+```
+
+Missing `month` now defaults to `current_month`, matching `calculate_top_three` behaviour. Entries without a `month` field are kept (assumed to belong to the current month), consistent with the pre-PR#39 assumption.
+
+**Test results:** 32/32 passed (venv312, Python 3.12).

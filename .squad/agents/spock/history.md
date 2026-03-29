@@ -97,6 +97,25 @@ Also add one test that passes a template string through the schema into `__init_
 
 ---
 
+## top_three Upgrade Wipe Analysis (2025-07)
+
+**Issue:** After upgrading from "0.3.1" to current main, `top_three` on avg sensor was empty.
+
+**Root cause:** `_restore_top_three()` (sensor.py lines 115–117) discards entries where `item_month is None`. Pre-PR-#39 code (0.3.0 and the code-identical "0.3.1" HACS release) saves top_three entries without a `month` field. All saved history is silently discarded on first restart after upgrade.
+
+**Key facts:**
+- `0.3.0 calculate_top_three` entries: `{"day", "hour", "energy"}` — no `month`
+- `_restore_top_three`: `if item_month is None: continue` → discards all legacy entries
+- **Inconsistency:** `calculate_top_three` treats no-month entries as current-month (lenient), but `_restore_top_three` discards them (strict)
+- Bug B (reference assignment) is **confirmed fixed** at line 555: `list(threshold_data.top_three)` ✓
+- PR #40 introduced **no regression** — the refactor extracted identical logic
+
+**Fix:** Change `_restore_top_three` to use `int(item.get("month", current_month))` instead of `None` default — matches `calculate_top_three` leniency, preserves data on upgrade.
+
+**Findings:** `.squad/decisions/inbox/spock-topthree-regression.md`
+
+---
+
 ## Issue #22 Final Approval — Template Support for LEVEL_PRICE (2025-07)
 
 **Status:** APPROVED — all criteria met
@@ -110,3 +129,23 @@ Also add one test that passes a template string through the schema into `__init_
 **Test result:** 32/32 passed (6 new Issue #22 tests + 26 prior regression tests)
 
 **Verdict file:** `.squad/decisions/inbox/spock-issue-22-final.md`
+
+---
+
+## _restore_top_three Migration Fix Review (2026-03)
+
+**Date:** 2026-03  
+**Status:** APPROVED
+
+**What was reviewed:**
+- `_restore_top_three()` in `sensor.py`: `item.get("month", None)` → `item.get("month", current_month)`, `is None` branch removed
+- 4 new tests under `# --- Upgrade migration: _restore_top_three ---`
+
+**Findings:**
+- Fix is correct: `current_month` is in scope at the `.get()` call (line 114 → line 116), default correctly matches `calculate_top_three` leniency
+- Prior-month filtering unchanged and verified
+- Malformed-month edge case is theoretical only; same risk existed before fix, no change warranted
+- All 4 tests are sound; Bug B guard is meaningful and cross-chains both fixes
+- 36/36 tests pass
+
+**Verdict file:** `.squad/decisions/inbox/spock-topthree-review.md`
