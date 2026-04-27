@@ -72,7 +72,7 @@ Per entry, here are the values needed:
 |------|------|---------|-------|-------------|
 | name | string | **required** | v0.0.1 | Name of grid energy level |
 | threshold | float | **required** | v0.0.1 | Energy threshold level, in kWh |
-| price | float | **required** | v0.0.1 | Energy level price |
+| price | float or template | **required** | v0.0.1 | Energy level price. Accepts a static number or a Jinja2 template string (see [Dynamic prices with templates](#dynamic-prices-with-templates)). |
 
 Levels example:
 
@@ -91,6 +91,50 @@ levels:
 ```
 
 For a complete configuration example with all properties, see [full example](examples/full.yaml)
+
+#### Dynamic prices with templates
+
+The `price` field accepts Jinja2 template strings in addition to static numbers. This lets the price follow a sensor or `input_number` automatically — no YAML edits needed when the tariff changes.
+
+**Static price (plain number):**
+
+```yaml
+levels:
+  - name: "Trinn 1: 0-2 kWh"
+    threshold: 2
+    price: 135
+```
+
+**Template — literal expression** (useful for testing):
+
+```yaml
+levels:
+  - name: "Trinn 1: 0-2 kWh"
+    threshold: 2
+    price: "{{ 135.0 }}"
+```
+
+**Template — driven by a Nordpool sensor:**
+
+```yaml
+levels:
+  - name: "Trinn 1: 0-2 kWh"
+    threshold: 2
+    price: "{{ states('sensor.nordpool_current_price') | float(135) }}"
+```
+
+**Template — driven by an `input_number` helper:**
+
+```yaml
+levels:
+  - name: "Trinn 1: 0-2 kWh"
+    threshold: 2
+    price: "{{ states('input_number.grid_tariff_price') | float(135) }}"
+```
+
+The `| float(135)` filter is good practice: it converts the state to a number and falls back to `135` if the entity is unavailable or returns a non-numeric value.
+
+> **Error behaviour:** If a template fails to render (unavailable entity, syntax error, non-numeric result), the level update for that cycle is skipped safely and an error is logged. The integration will retry on the next update cycle — no restart required.
 
 ## Sensors
 
