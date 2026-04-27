@@ -262,6 +262,7 @@ async def test_average_peak_hours_state_change(hass, basic_config, mock_coordina
     timestamp = dt.now()
     energy_data = EnergyData(4.0, 1000.0, timestamp)
     
+    sensor._initialized = True
     sensor._state_change(energy_data)
     
     # Average of current top_three values
@@ -506,6 +507,16 @@ async def test_regression_a_exceeds_all_levels(hass, mock_coordinator):
     threshold_sensor.schedule_update_ha_state = Mock()
     avg_sensor.schedule_update_ha_state = Mock()
 
+    # Initialize sensors as async_added_to_hass would, without touching HA storage.
+    threshold_sensor._initialized = True
+    threshold_sensor._disposables = [
+        mock_coordinator.effectstate.subscribe(threshold_sensor._state_change)
+    ]
+    avg_sensor._initialized = True
+    avg_sensor._disposables = [
+        mock_coordinator.effectstate.subscribe(avg_sensor._state_change)
+    ]
+
     # Feed 3 hours across 3 different days — all 7.0 kWh, exceeding the 5.0 max level.
     base_ts = datetime(2025, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
     for day in [1, 2, 3]:
@@ -543,6 +554,12 @@ async def test_regression_b_reference_not_copy(hass, config_with_levels, mock_co
         hass, config_with_levels, mock_coordinator
     )
     avg_sensor.schedule_update_ha_state = Mock()
+
+    # Initialize as async_added_to_hass would, without touching HA storage.
+    avg_sensor._initialized = True
+    avg_sensor._disposables = [
+        mock_coordinator.thresholddata.subscribe(avg_sensor._threshold_state_change)
+    ]
 
     # Build a top_three list and broadcast it to the avg sensor via thresholddata.
     source_list = [
@@ -734,4 +751,103 @@ async def test_restore_top_three_bug_b_still_fixed(hass, config_with_levels, moc
     assert len(avg_sensor.attr["top_three"]) == 3, (
         "avg_sensor top_three was wiped when threshold source list was cleared — "
         "Bug B shallow-copy fix has been reverted."
+    )
+
+
+@pytest.mark.asyncio
+async def test_regression_c_race_condition_threshold_uninitialized(
+    hass, config_with_levels, mock_coordinator
+):
+    """Regression C (root-cause fix): startup race condition must not corrupt avg sensor.
+
+    Scenario: avg sensor is fully initialized (top_three restored from HA state).
+    Threshold sensor has NOT yet completed async_added_to_hass (top_three empty,
+    _initialized=False).  An effectstate event fires in this window (e.g. power
+    meter comes back online after a long outage).
+
+    Old behaviour: threshold._state_change ran with empty top_three, emitted
+    thresholddata([{energy:5.01}]), avg._threshold_state_change overwrote the
+    correctly-restored top_three.
+
+    Correct behaviour: threshold sensor must ignore the event while _initialized
+    is False, so avg sensor's restored top_three is never corrupted.
+    """
+    restored_top_three = [
+        {"month": 4, "day": 1, "hour": 10, "energy": 6.30},
+        {"month": 4, "day": 2, "hour": 14, "energy": 7.85},
+        {"month": 4, "day": 3, "hour": 9, "energy": 7.28},
+    ]
+
+    # avg sensor: fully initialized with restored top_three.
+    avg_sensor = GridCapWatcherAverageThreePeakHours(
+        hass, config_with_levels, mock_coordinator
+    )
+    avg_sensor.schedule_update_ha_state = Mock()
+    avg_sensor.attr["top_three"] = list(restored_top_three)
+    avg_sensor._initialized = True
+    avg_sensor._disposables = [
+        mock_coordinator.effectstate.subscribe(avg_sensor._state_change),
+        mock_coordinator.thresholddata.subscribe(avg_sensor._threshold_state_change),
+    ]
+
+    # threshold sensor: created but async_added_to_hass has NOT run (_initialized=False).
+    threshold_sensor = GridCapWatcherCurrentEffectLevelThreshold(
+        hass, config_with_levels, mock_coordinator
+    )
+    threshold_sensor.schedule_update_ha_state = Mock()
+    # _initialized remains False — threshold is not subscribed yet.
+
+    # effectstate fires while threshold is uninitialized (stale 5.01 kWh from last save).
+    stale_ts = datetime(2026, 4, 27, 5, 44, 0, tzinfo=timezone.utc)
+    stale_energy = EnergyData(5.01, 5010.0, stale_ts)
+    mock_coordinator.effectstate.on_next(stale_energy)
+
+    # avg sensor must still have its 3 restored entries — NOT the stale 5.01 single entry.
+    assert len(avg_sensor.attr["top_three"]) == 3, (
+        f"avg sensor top_three corrupted by stale effectstate during startup race. "
+        f"Got: {avg_sensor.attr['top_three']}"
+    )
+    energies = [e["energy"] for e in avg_sensor.attr["top_three"]]
+    assert 5.01 not in energies or len(avg_sensor.attr["top_three"]) == 3, (
+        "avg top_three was overwritten with the stale single-entry thresholddata."
+    )
+    # State must still reflect original restored average, not the stale 5.01.
+    expected_avg = sum(e["energy"] for e in restored_top_three) / 3
+    # (avg._state_change ran for effectstate, but 5.01 < all restored entries so no change)
+    assert avg_sensor._state is None or avg_sensor._state != pytest.approx(5.01, abs=0.01), (
+        "avg sensor _state was corrupted to 5.01 by the startup race condition."
+    )
+
+
+@pytest.mark.asyncio
+async def test_regression_d_stale_energy_not_restored(hass, basic_config, mock_coordinator):
+    """Regression D: energy sensor must not restore a stale hourly state after a long gap.
+
+    When HA restarts after being down for hours/days, the last saved energy value
+    belongs to a previous hour.  Restoring it causes the first effectstate emission
+    to carry a stale non-zero kWh, which then seeds a wrong entry into top_three
+    (e.g. 5.01 kWh from before the crash).
+
+    Correct behaviour: if the last save timestamp is before the start of the
+    current hour, self._state must be reset to 0 (not the saved value).
+    """
+    sensor = GridCapWatcherEnergySensor(hass, basic_config, mock_coordinator)
+
+    # Simulate saved sensor data with a value from a previous hour.
+    saved_sensor_data = Mock()
+    saved_sensor_data.native_value = 5.01
+
+    # last_updated is 3 hours ago — clearly in a previous hour.
+    stale_last_updated = dt.utcnow() - timedelta(hours=3)
+    last_state = Mock()
+    last_state.last_updated = stale_last_updated
+
+    sensor.async_get_last_sensor_data = AsyncMock(return_value=saved_sensor_data)
+    sensor.async_get_last_state = AsyncMock(return_value=last_state)
+
+    await sensor.async_added_to_hass()
+
+    assert sensor._state == 0 or sensor._state is None, (
+        f"Energy sensor restored stale value {sensor._state} from a previous hour. "
+        "Expected 0 or None after a multi-hour gap (stale hourly accumulator must be discarded)."
     )

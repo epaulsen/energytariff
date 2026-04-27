@@ -49,6 +49,7 @@ from .utils import (
     convert_to_watt,
     get_rounding_precision,
     seconds_between,
+    start_of_current_hour,
     start_of_next_hour,
     start_of_next_month,
 )
@@ -106,15 +107,20 @@ def _make_device_info(effect_sensor_id: str) -> DeviceInfo:
 
 
 def _restore_top_three(savedstate: Any, attr: dict) -> None:
-    """Restore top_three from saved HA state, filtering to current month only."""
+    """Restore top_three from saved HA state, filtering to current month only.
+
+    Replaces any existing top_three content rather than appending to it, so
+    events that fired before async_added_to_hass cannot leave stale entries.
+    """
     if "top_three" not in savedstate.attributes:
         return
     current_month = dt.as_local(dt.now()).month
+    restored = []
     for item in savedstate.attributes["top_three"]:
         item_month = int(item.get("month", current_month))
         if item_month != current_month:
             continue
-        attr["top_three"].append(
+        restored.append(
             {
                 "month": int(item_month),
                 "day": item["day"],
@@ -122,6 +128,7 @@ def _restore_top_three(savedstate: Any, attr: dict) -> None:
                 "energy": item["energy"],
             }
         )
+    attr["top_three"] = restored
 
 
 class GridCapWatcherEnergySensor(RestoreSensor):
@@ -152,8 +159,18 @@ class GridCapWatcherEnergySensor(RestoreSensor):
         """Call when entity about to be added to hass."""
         await super().async_added_to_hass()
         savedstate = await self.async_get_last_sensor_data()
+        last_state = await self.async_get_last_state()
         if savedstate and savedstate.native_value is not None:
-            self._state = float(savedstate.native_value)
+            # Only restore hourly energy if the last save was within the current hour.
+            # A stale restored value (from a previous run) would seed incorrect
+            # top_three entries after a restart with a long gap.
+            if last_state is not None:
+                current_hour_start = start_of_current_hour(dt.as_local(dt.now()))
+                if dt.as_local(last_state.last_updated) >= current_hour_start:
+                    self._state = float(savedstate.native_value)
+                # else: start fresh at 0 for the current hour
+            else:
+                self._state = float(savedstate.native_value)
 
     async def async_will_remove_from_hass(self) -> None:
         self._unsub_state()
@@ -333,10 +350,11 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor):
 
         self.attr = {"top_three": []}
         self._levels = config.get(GRID_LEVELS)
+        self._initialized = False
 
-        self._disposables = [
-            self._coordinator.effectstate.subscribe(self._state_change)
-        ]
+        # Subscriptions are set up in async_added_to_hass, after state is restored,
+        # to prevent processing events with an empty top_three.
+        self._disposables = []
         self._unsub_bus = hass.bus.async_listen(RESET_TOP_THREE, self.handle_reset_event)
         self._unsub_timer = async_track_point_in_time(
             hass, self._async_reset_meter, start_of_next_month(dt.as_local(dt.now()))
@@ -350,6 +368,13 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor):
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 self._state = float(savedstate.state)
             _restore_top_three(savedstate, self.attr)
+
+        # Subscribe only after restoration so the first callback processes
+        # correct (restored) top_three data and does not emit stale thresholddata.
+        self._disposables = [
+            self._coordinator.effectstate.subscribe(self._state_change)
+        ]
+        self._initialized = True
 
     async def async_will_remove_from_hass(self) -> None:
         for d in self._disposables:
@@ -377,6 +402,8 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor):
 
     def _state_change(self, state: EnergyData) -> None:
         if state is None:
+            return
+        if not self._initialized:
             return
 
         self.attr["month"] = dt.as_local(dt.now()).month
@@ -472,16 +499,12 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor):
         )
 
         self.attr = {"top_three": []}
+        self._has_levels = config.get(GRID_LEVELS) is not None
+        self._initialized = False
 
-        # Subscribe to both effectstate (for backwards compatibility and when no levels are
-        # configured) and thresholddata (to get synchronized top_three from threshold sensor)
-        self._disposables = [
-            self._coordinator.effectstate.subscribe(self._state_change)
-        ]
-        if config.get(GRID_LEVELS) is not None:
-            self._disposables.append(
-                self._coordinator.thresholddata.subscribe(self._threshold_state_change)
-            )
+        # Subscriptions are set up in async_added_to_hass, after state is restored,
+        # to prevent processing events with an empty top_three.
+        self._disposables = []
         self._unsub_bus = hass.bus.async_listen(RESET_TOP_THREE, self.handle_reset_event)
         self._unsub_timer = async_track_point_in_time(
             hass, self._async_reset_meter, start_of_next_month(dt.as_local(dt.now()))
@@ -495,6 +518,18 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor):
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 self._state = float(savedstate.state)
             _restore_top_three(savedstate, self.attr)
+
+        # Subscribe only after restoration so the first callback processes
+        # correct (restored) top_three data and cannot be overwritten by stale
+        # thresholddata emitted before the threshold sensor is itself initialized.
+        self._disposables = [
+            self._coordinator.effectstate.subscribe(self._state_change)
+        ]
+        if self._has_levels:
+            self._disposables.append(
+                self._coordinator.thresholddata.subscribe(self._threshold_state_change)
+            )
+        self._initialized = True
 
     async def async_will_remove_from_hass(self) -> None:
         for d in self._disposables:
@@ -529,6 +564,8 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor):
         """
         if threshold_data is None:
             return
+        if not self._initialized:
+            return
 
         # Use the top_three from the threshold sensor (shallow copy to prevent reference sharing)
         self.attr["top_three"] = list(threshold_data.top_three)
@@ -542,6 +579,8 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor):
 
     def _state_change(self, state: EnergyData) -> None:
         if state is None:
+            return
+        if not self._initialized:
             return
 
         self.attr["top_three"] = calculate_top_three(state, self.attr["top_three"])
