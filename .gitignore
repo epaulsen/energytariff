@@ -27,3 +27,6 @@ sensor-data.txt
 
 # Sensor log files — not for commit
 logfiles/
+
+# Mac specific files
+.DS_Store

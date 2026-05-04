@@ -21,6 +21,8 @@ from homeassistant.const import (
     UnitOfPower,
 )
 from homeassistant.core import Event, EventStateChangedData, callback
+from homeassistant.exceptions import TemplateError
+from homeassistant.helpers import template as template_helper
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import (
     async_track_point_in_time,
@@ -60,7 +62,7 @@ LEVEL_SCHEMA = vol.Schema(
     {
         vol.Required(LEVEL_NAME): cv.string,
         vol.Required(LEVEL_THRESHOLD): cv.Number,
-        vol.Required(LEVEL_PRICE): cv.Number,
+        vol.Required(LEVEL_PRICE): vol.Any(cv.Number, cv.template),
     }
 )
 
@@ -362,6 +364,11 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor):
         self.attr = {"top_three": []}
         self._levels = config.get(GRID_LEVELS)
         self._initialized = False
+        if self._levels:
+            for level in self._levels:
+                price_raw = level.get(LEVEL_PRICE)
+                if isinstance(price_raw, template_helper.Template):
+                    price_raw.hass = hass
 
         # Subscriptions are set up in async_added_to_hass, after state is restored,
         # to prevent processing events with an empty top_three.
@@ -435,12 +442,26 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor):
             self._state = found_threshold["threshold"]
             self.schedule_update_ha_state(True)
 
+            price_value = found_threshold["price"]
+            if isinstance(price_value, template_helper.Template):
+                try:
+                    resolved_price = float(price_value.render(parse_result=True))
+                except (TemplateError, ValueError) as err:
+                    _LOGGER.error(
+                        "Failed to resolve LEVEL_PRICE template for level '%s': %s",
+                        found_threshold["name"],
+                        err,
+                    )
+                    return False
+            else:
+                resolved_price = float(price_value)
+
             # Notify other sensors that threshold level has been updated
             self._coordinator.thresholddata.on_next(
                 GridThresholdData(
                     found_threshold["name"],
                     float(found_threshold["threshold"]),
-                    float(found_threshold["price"]),
+                    resolved_price,
                     self.attr["top_three"],
                 )
             )

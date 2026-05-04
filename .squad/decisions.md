@@ -125,6 +125,88 @@ include `month` in restored dict.
 
 ---
 
+### Issue #22: Jinja2 Templates for LEVEL_PRICE
+
+**Authors:** Spock (plan), Geordi (impl + fix), Worf (tests)  
+**Date:** 2026-03  
+**Status:** APPROVED — READY FOR MERGE
+
+---
+
+**Summary:** `LEVEL_PRICE` now accepts Jinja2 templates (e.g., `{{ states('sensor.electricity_price') }}`) in addition to static numbers. Users can automate price-level changes via HA sensors or `input_number` entities without editing YAML.
+
+---
+
+**Implementation Details**
+
+**Schema change:**
+```python
+vol.Required(LEVEL_PRICE): vol.Any(cv.Number, cv.template)
+```
+`cv.Number` first ensures backward compatibility: numeric inputs stay as floats.
+
+**Init pre-processing:**
+`cv.template` converts raw YAML strings to `Template` objects before `__init__` runs. Pre-processing binds `hass` to each:
+```python
+if isinstance(price_raw, template_helper.Template):
+    price_raw.hass = hass
+```
+
+**Runtime resolution:**
+Inside synchronous `calculate_level()` `@callback`:
+```python
+if isinstance(price_value, template_helper.Template):
+    resolved_price = float(price_value.render(parse_result=True))
+else:
+    resolved_price = float(price_value)
+```
+Template rendering errors (TemplateError, ValueError) are caught; update is skipped and error logged; state not corrupted.
+
+---
+
+**Backward Compatibility**
+
+| Scenario | Before | After | Result |
+|---|---|---|---|
+| `price: 135` (int) | Works | cv.Number matches, float(135) | ✅ Identical |
+| `price: 135.5` (float) | Works | cv.Number matches, float(135.5) | ✅ Identical |
+| `price: "{{ states('sensor.x') }}"` | Error | Template validated, rendered at runtime | ✅ New feature |
+| Template error | N/A | Logged, level skipped | ✅ Graceful |
+
+---
+
+**Files Changed**
+
+- `custom_components/energytariff/sensor.py` — schema, init pre-processing, calculate_level()
+- `tests/test_sensor.py` — 6 new tests (regression + happy path + error paths)
+- `README.md` — documentation with 4 YAML examples
+
+---
+
+**Test Results**
+
+- 32/32 tests passing (26 prior + 6 new)
+- Key tests: static regression, template happy path, entity unavailable, non-numeric render, schema accept/reject
+
+---
+
+**Review History**
+
+1. Spock (analysis): APPROVED concept
+2. Geordi (implementation): 32 tests pass
+3. Worf (tests): All 6 tests pass
+4. Spock (review 1): **REJECTED** — found dead code (`isinstance(str)` never fires)
+5. Geordi (fix): Surgical change — `isinstance(str)` → `isinstance(Template)`, assign hass
+6. Spock (final): **APPROVED** after fix
+
+---
+
+**Key Pattern**
+
+`cv.template` is a voluptuous validator that **converts** raw YAML strings to Template objects before `__init__` runs. Always use `isinstance(x, template_helper.Template)` to detect templates (never check for `str`), and assign `.hass` to bind the HA instance — do not reconstruct.
+
+---
+
 ## Governance
 
 - All meaningful changes require team consensus
