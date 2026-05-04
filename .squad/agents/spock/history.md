@@ -14,6 +14,21 @@
 
 ## Learnings
 
+### fix/average-peak-drops — Startup race condition review (2026-06)
+
+**Branch:** `fix/average-peak-drops` | **Commit:** `0575f67` | **Verdict:** APPROVED
+
+**Fix reviewed:** Single `async_add_entities` call with threshold sensors placed before avg.
+
+**Fix is correct.** BehaviorSubject `subscribe()` delivers the current value synchronously. When threshold initialises first and its effectstate replay fires → updates thresholddata. When avg later subscribes to thresholddata → BehaviorSubject replays threshold's up-to-date value. The no-GRID_LEVELS path is unaffected (avg never subscribes to thresholddata).
+
+**Non-blocking notes recorded:**
+1. Sequential `async_added_to_hass` ordering is not formally guaranteed by asyncio task scheduling — it is reliable in practice in HA's entity platform but relies on implicit behaviour. Comment in code explains this, which is sufficient.
+2. `list(threshold_data.top_three)` is a shallow copy — dict objects are shared. `calculate_top_three` Case 2 mutates dicts in-place. Benign today because RxPY synchronous delivery means avg._threshold_state_change always runs before avg._state_change (threshold subscribes to effectstate first, so thresholddata fires within threshold._state_change before avg._state_change runs). A `copy.deepcopy` would be more defensive.
+3. `test_regression_e` validates behaviour given correct subscription order but does not test that HA's runtime achieves that order. The structural ordering assertion lives in `test_async_setup_platform_with_levels`.
+
+**33/33 tests pass.**
+
 ### Issue #34 — "Average peak hour energy" regression in 0.3.0 (2025-07)
 
 **Two root causes identified:**

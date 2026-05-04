@@ -15,7 +15,20 @@
 
 ## Learnings
 
-### 2026-01 CSV Analysis & Synthetic Data Generation
+### 2026-05-04 Post-PR-39 Reboot Drop — Initialization Ordering Bug
+
+**Bug:** After reboot with PR-39 fixes deployed, `sensor.average_peak_hour_energy` showed lower average and different `top_three` entries.
+
+**Root cause:** Two `async_add_entities` calls placed avg sensor in batch 1 and threshold sensor in batch 2. Avg subscribed to `effectstate` before threshold. AMS events fired in the gap (HA startup ~10s, AMS interval ~2-10s). Avg processed gap events; threshold did not. Threshold's first event emitted `thresholddata` with stale restored `top_three`. `_threshold_state_change` overwrote avg's correct (gap-updated) data.
+
+**Fix:** Single `async_add_entities` call. Threshold sensors placed BEFORE avg sensor. Threshold now subscribes to effectstate first → fires first per event → emits current thresholddata → avg gets up-to-date data via `_threshold_state_change` → avg's own `_state_change` is a no-op (Case 2 same-event idempotent).
+
+**Pattern learned:** When sensor A's state depends on sensor B's data via BehaviorSubject, sensor B must subscribe to the shared observable FIRST (initialize earlier in entity list). BehaviorSubject only replays the last value; events emitted during the initialization gap are NOT replayed. The `_initialized=False` guard only protects the subscribing sensor from replayed startup data, NOT from stale emissions from other sensors that initialized later.
+
+**Files changed:** `sensor.py` (setup order), `tests/test_sensor.py` (+1 regression test, updated 2 setup tests)  
+**Commit:** 0575f67 on `fix/average-peak-drops`
+
+
 
 **Source files analysed (logfiles/):**
 - `history.csv` — sensor_1: ~10s intervals, high heating load (mean 5065W, max 11812W). Large house.
