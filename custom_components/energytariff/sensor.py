@@ -79,22 +79,33 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     """Setup sensor platform."""
     rx_coord = GridCapacityCoordinator(hass)
 
-    async_add_entities(
-        [
-            GridCapWatcherEnergySensor(hass, config, rx_coord),
-            GridCapWatcherEstimatedEnergySensor(hass, config, rx_coord),
-            GridCapWatcherAverageThreePeakHours(hass, config, rx_coord),
-            GridCapWatcherAvailableEffectRemainingHour(hass, config, rx_coord),
-        ]
-    )
+    # Threshold sensor must initialize (and subscribe to effectstate) BEFORE the
+    # average sensor.  Both sensors defer subscription to async_added_to_hass, so
+    # their position in this list determines subscription order.
+    #
+    # If threshold were added in a second async_add_entities call (as before), a
+    # window existed where AMS readings updated avg's top_three but not threshold's.
+    # The next event after threshold initialised would emit thresholddata with the
+    # stale restored top_three, and _threshold_state_change would overwrite avg's
+    # already-correct data — causing an apparent drop after reboot.
+    entities: list = [
+        GridCapWatcherEnergySensor(hass, config, rx_coord),
+        GridCapWatcherEstimatedEnergySensor(hass, config, rx_coord),
+        GridCapWatcherAvailableEffectRemainingHour(hass, config, rx_coord),
+    ]
     if config.get(GRID_LEVELS) is not None:
-        async_add_entities(
+        entities.extend(
             [
                 GridCapWatcherCurrentEffectLevelThreshold(hass, config, rx_coord),
                 GridCapacityWatcherCurrentLevelName(hass, config, rx_coord),
                 GridCapacityWatcherCurrentLevelPrice(hass, config, rx_coord),
             ]
         )
+    # Average sensor last: subscribes to effectstate after threshold, so threshold
+    # fires first on every reading and emits up-to-date thresholddata before avg's
+    # own _state_change runs.
+    entities.append(GridCapWatcherAverageThreePeakHours(hass, config, rx_coord))
+    async_add_entities(entities)
 
 
 def _make_device_info(effect_sensor_id: str) -> DeviceInfo:

@@ -88,35 +88,46 @@ async def mock_coordinator(hass):
 async def test_async_setup_platform_basic(hass, basic_config):
     """Test sensor platform setup with basic configuration."""
     mock_add_entities = Mock()
-    
+
     await async_setup_platform(hass, basic_config, mock_add_entities)
-    
+
     assert mock_add_entities.called
+    assert mock_add_entities.call_count == 1
     entities = mock_add_entities.call_args[0][0]
     assert len(entities) == 4
     assert isinstance(entities[0], GridCapWatcherEnergySensor)
     assert isinstance(entities[1], GridCapWatcherEstimatedEnergySensor)
-    assert isinstance(entities[2], GridCapWatcherAverageThreePeakHours)
-    assert isinstance(entities[3], GridCapWatcherAvailableEffectRemainingHour)
+    assert isinstance(entities[2], GridCapWatcherAvailableEffectRemainingHour)
+    assert isinstance(entities[3], GridCapWatcherAverageThreePeakHours)
 
 
 @pytest.mark.asyncio
 async def test_async_setup_platform_with_levels(hass, config_with_levels):
-    """Test sensor platform setup with grid levels configuration."""
+    """Test sensor platform setup with grid levels configuration.
+
+    Threshold sensor must be initialised BEFORE the average sensor so that
+    threshold subscribes to effectstate first.  This prevents the startup race
+    where avg processes gap events that threshold misses, then threshold's first
+    thresholddata emission overwrites avg's correct data with stale restored data.
+    """
     mock_add_entities = Mock()
-    
+
     await async_setup_platform(hass, config_with_levels, mock_add_entities)
-    
-    assert mock_add_entities.call_count == 2
-    # First call adds 4 basic sensors
-    first_call_entities = mock_add_entities.call_args_list[0][0][0]
-    assert len(first_call_entities) == 4
-    # Second call adds 3 level sensors
-    second_call_entities = mock_add_entities.call_args_list[1][0][0]
-    assert len(second_call_entities) == 3
-    assert isinstance(second_call_entities[0], GridCapWatcherCurrentEffectLevelThreshold)
-    assert isinstance(second_call_entities[1], GridCapacityWatcherCurrentLevelName)
-    assert isinstance(second_call_entities[2], GridCapacityWatcherCurrentLevelPrice)
+
+    assert mock_add_entities.call_count == 1, (
+        "All entities must be added in a single async_add_entities call so that "
+        "threshold initialises before avg (correct subscription order)."
+    )
+    entities = mock_add_entities.call_args[0][0]
+    assert len(entities) == 7
+    assert isinstance(entities[0], GridCapWatcherEnergySensor)
+    assert isinstance(entities[1], GridCapWatcherEstimatedEnergySensor)
+    assert isinstance(entities[2], GridCapWatcherAvailableEffectRemainingHour)
+    # Threshold sensors must come before the average sensor.
+    assert isinstance(entities[3], GridCapWatcherCurrentEffectLevelThreshold)
+    assert isinstance(entities[4], GridCapacityWatcherCurrentLevelName)
+    assert isinstance(entities[5], GridCapacityWatcherCurrentLevelPrice)
+    assert isinstance(entities[6], GridCapWatcherAverageThreePeakHours)
 
 
 @pytest.mark.asyncio
@@ -816,6 +827,88 @@ async def test_regression_c_race_condition_threshold_uninitialized(
     # (avg._state_change ran for effectstate, but 5.01 < all restored entries so no change)
     assert avg_sensor._state is None or avg_sensor._state != pytest.approx(5.01, abs=0.01), (
         "avg sensor _state was corrupted to 5.01 by the startup race condition."
+    )
+
+
+@pytest.mark.asyncio
+async def test_regression_e_avg_not_overwritten_by_stale_threshold_on_first_event(
+    hass, config_with_levels, mock_coordinator
+):
+    """Regression E: first thresholddata event after reboot must not revert avg to stale data.
+
+    Scenario (reproduces the post-PR-39 reboot drop):
+      1. Threshold sensor is initialised first with restored top_three [A, B, C].
+      2. A gap AMS event fires — threshold processes it, updates its top_three, emits
+         thresholddata.  Avg sensor is not yet subscribed, so it misses the event.
+      3. Avg sensor initialises with its own restored top_three [A, B, C].
+      4. Next AMS event fires.  With the OLD setup order (two async_add_entities calls,
+         avg first), threshold was initialised AFTER avg, so threshold started from the
+         restored state only.  Its thresholddata emission then overwrote avg's already-
+         correct (gap-updated) top_three with the stale restored version.
+      5. With the FIXED setup order (threshold before avg, single call), threshold fires
+         first for every event and avg's _threshold_state_change receives the up-to-date
+         top_three that already includes the gap event.
+
+    This test validates step 4: avg's top_three after the first real event must equal
+    threshold's up-to-date top_three (which includes the gap event), not the stale
+    restored snapshot.
+    """
+    restored_top_three = [
+        {"month": 5, "day": 1, "hour": 17, "energy": 3.0},
+        {"month": 5, "day": 2, "hour": 18, "energy": 2.8},
+        {"month": 5, "day": 3, "hour": 16, "energy": 2.5},
+    ]
+
+    # --- Threshold sensor initialises first (correct order) ---
+    threshold_sensor = GridCapWatcherCurrentEffectLevelThreshold(
+        hass, config_with_levels, mock_coordinator
+    )
+    threshold_sensor.schedule_update_ha_state = Mock()
+    threshold_sensor.attr["top_three"] = [dict(e) for e in restored_top_three]
+    threshold_sensor._initialized = True
+    threshold_sensor._disposables = [
+        mock_coordinator.effectstate.subscribe(threshold_sensor._state_change)
+    ]
+
+    # --- Gap event: threshold processes it, avg not yet subscribed ---
+    # May 4 reading higher than May 3 (day=3, energy=2.5) → replaces it.
+    gap_ts = datetime(2026, 5, 4, 10, 0, 0, tzinfo=timezone.utc)
+    gap_event = EnergyData(2.7, 2700.0, gap_ts)
+    mock_coordinator.effectstate.on_next(gap_event)
+
+    # Threshold top_three should now include May 4 (replaced May 3 as lowest).
+    threshold_top_three_after_gap = threshold_sensor.attr["top_three"]
+    gap_days = [e["day"] for e in threshold_top_three_after_gap]
+    assert 4 in gap_days, (
+        f"Threshold sensor did not process the gap event. top_three days: {gap_days}"
+    )
+
+    # --- Avg sensor initialises second with the SAME restored data (no gap events) ---
+    avg_sensor = GridCapWatcherAverageThreePeakHours(
+        hass, config_with_levels, mock_coordinator
+    )
+    avg_sensor.schedule_update_ha_state = Mock()
+    avg_sensor.attr["top_three"] = [dict(e) for e in restored_top_three]
+    avg_sensor._initialized = True
+    avg_sensor._disposables = [
+        mock_coordinator.effectstate.subscribe(avg_sensor._state_change),
+        mock_coordinator.thresholddata.subscribe(avg_sensor._threshold_state_change),
+    ]
+
+    # --- Next AMS event fires ---
+    # Small reading that won't displace any of the top_three peaks.
+    next_ts = datetime(2026, 5, 4, 11, 0, 0, tzinfo=timezone.utc)
+    next_event = EnergyData(0.5, 500.0, next_ts)
+    mock_coordinator.effectstate.on_next(next_event)
+
+    # avg's top_three must match threshold's (which includes the gap-event update).
+    # Specifically, day=4 must be present (was added during the gap).
+    avg_days = [e["day"] for e in avg_sensor.attr["top_three"]]
+    assert 4 in avg_days, (
+        f"avg sensor lost the gap-event entry (day=4). "
+        f"avg top_three days: {avg_days}. "
+        "This is the post-PR-39 reboot drop bug: threshold initialised after avg, "
+        "its first thresholddata emission overwrote avg's correct data with stale restored data."
     )
 
 
