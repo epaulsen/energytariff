@@ -15,6 +15,30 @@
 
 ## Learnings
 
+### 2026-05-04 Post-Reboot Drop — thresholddata Subscription + Deep Copy Bugs
+
+**Source:** `ha_query.csv` — HA database dump showing pre/post-reboot sensor values.
+
+**Bug 1 — thresholddata overwrites avg's correct restored top_three:**
+- avg subscribed to thresholddata via `_threshold_state_change` (shallow copy).
+- On reboot, threshold restores stale top_three (session ended before day3's peak), avg restores correct one.
+- First AMS event < stale threshold entry → threshold keeps stale top_three, emits it.
+- `_threshold_state_change` fires → avg's correct data overwritten with stale data → drop observed.
+- Fix: remove thresholddata subscription entirely. Avg maintains own top_three via effectstate.
+
+**Bug 2 — shallow dict copy causes alternating corruption (2.59 ↔ 7.59 pattern):**
+- `calculate_level()` passed `self.attr["top_three"]` (direct reference) to GridThresholdData.
+- `calculate_top_three` mutates dict entries in-place; same dict objects in broadcast → corrupted.
+- 7.590618 = 2.590618 + 5.0 (energy field mutated by the next calculate_top_three call).
+- Fix: `[dict(e) for e in self.attr["top_three"]]` — new list AND new dicts per entry.
+
+**Pattern learned:** Never pass internal mutable state by reference to event buses/BehaviorSubjects.
+Deep copy before emitting. Sensors that maintain related state should compute independently,
+not synchronize via re-emitted values from restored (potentially stale) peers.
+
+**Commit:** d4b84b0 on `fix/average-peak-drops`
+**Tests:** 40/40 pass (+1 regression F, 4 existing tests updated)
+
 ### 2026-05-04 Post-PR-39 Reboot Drop — Initialization Ordering Bug
 
 **Bug:** After reboot with PR-39 fixes deployed, `sensor.average_peak_hour_energy` showed lower average and different `top_three` entries.
