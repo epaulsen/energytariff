@@ -81,15 +81,10 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     """Setup sensor platform."""
     rx_coord = GridCapacityCoordinator(hass)
 
-    # Threshold sensor must initialize (and subscribe to effectstate) BEFORE the
-    # average sensor.  Both sensors defer subscription to async_added_to_hass, so
-    # their position in this list determines subscription order.
-    #
-    # If threshold were added in a second async_add_entities call (as before), a
-    # window existed where AMS readings updated avg's top_three but not threshold's.
-    # The next event after threshold initialised would emit thresholddata with the
-    # stale restored top_three, and _threshold_state_change would overwrite avg's
-    # already-correct data — causing an apparent drop after reboot.
+    # All entities in a single async_add_entities call.  Threshold sensors are
+    # listed before the average sensor so both subscribe to effectstate in the
+    # correct order (threshold first).  avg maintains its own top_three
+    # independently via effectstate and does NOT subscribe to thresholddata.
     entities: list = [
         GridCapWatcherEnergySensor(hass, config, rx_coord),
         GridCapWatcherEstimatedEnergySensor(hass, config, rx_coord),
@@ -103,9 +98,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
                 GridCapacityWatcherCurrentLevelPrice(hass, config, rx_coord),
             ]
         )
-    # Average sensor last: subscribes to effectstate after threshold, so threshold
-    # fires first on every reading and emits up-to-date thresholddata before avg's
-    # own _state_change runs.
+    # Average sensor last.
     entities.append(GridCapWatcherAverageThreePeakHours(hass, config, rx_coord))
     async_add_entities(entities)
 
@@ -462,7 +455,7 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor):
                     found_threshold["name"],
                     float(found_threshold["threshold"]),
                     resolved_price,
-                    self.attr["top_three"],
+                    [dict(e) for e in self.attr["top_three"]],
                 )
             )
         return True
@@ -531,7 +524,6 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor):
         )
 
         self.attr = {"top_three": []}
-        self._has_levels = config.get(GRID_LEVELS) is not None
         self._initialized = False
 
         # Subscriptions are set up in async_added_to_hass, after state is restored,
@@ -552,15 +544,13 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor):
             _restore_top_three(savedstate, self.attr)
 
         # Subscribe only after restoration so the first callback processes
-        # correct (restored) top_three data and cannot be overwritten by stale
-        # thresholddata emitted before the threshold sensor is itself initialized.
+        # correct (restored) top_three data.  avg maintains its own top_three
+        # independently via effectstate and does NOT consume thresholddata —
+        # that subscription was the root cause of the post-reboot drop bug where
+        # threshold's stale restored top_three overwrote avg's correct data.
         self._disposables = [
             self._coordinator.effectstate.subscribe(self._state_change)
         ]
-        if self._has_levels:
-            self._disposables.append(
-                self._coordinator.thresholddata.subscribe(self._threshold_state_change)
-            )
         self._initialized = True
 
     async def async_will_remove_from_hass(self) -> None:
@@ -586,28 +576,6 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor):
     def handle_reset_event(self, event):
         """Handle reset event to reset top three attributes"""
         self._async_reset_meter(event)
-
-    def _threshold_state_change(self, threshold_data: GridThresholdData) -> None:
-        """
-        Update top_three and average from threshold sensor.
-
-        This ensures that the average sensor and threshold sensor always use
-        the same top_three data, preventing synchronization issues.
-        """
-        if threshold_data is None:
-            return
-        if not self._initialized:
-            return
-
-        # Use the top_three from the threshold sensor (shallow copy to prevent reference sharing)
-        self.attr["top_three"] = list(threshold_data.top_three)
-
-        if not self.attr["top_three"]:
-            return
-
-        total_sum = sum(float(hour["energy"]) for hour in self.attr["top_three"])
-        self._state = total_sum / len(self.attr["top_three"])
-        self.schedule_update_ha_state(True)
 
     def _state_change(self, state: EnergyData) -> None:
         if state is None:

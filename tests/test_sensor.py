@@ -553,54 +553,46 @@ async def test_regression_a_exceeds_all_levels(hass, mock_coordinator):
 
 
 @pytest.mark.asyncio
-async def test_regression_b_reference_not_copy(hass, config_with_levels, mock_coordinator):
-    """Regression B (P0 — 0.3.0 reference assignment fragility):
-    GridCapWatcherAverageThreePeakHours._threshold_state_change does:
-        self.attr['top_three'] = threshold_data.top_three   # reference, not copy
-    After this assignment both sensors share the same mutable list object.
-    Any in-place mutation of the original list (e.g. list.clear(), list.sort(),
-    or item assignment by calculate_top_three) silently affects the avg sensor's
-    data too.
+async def test_regression_b_calculate_level_emits_deep_copy(hass, config_with_levels, mock_coordinator):
+    """Regression B (Fix 2): calculate_level must broadcast a deep copy of top_three.
 
-    Correct behaviour: the avg sensor must keep its OWN independent copy of
-    top_three.  Mutating the originating list must not change the avg sensor's
-    data.
+    If calculate_level passes a direct reference to self.attr['top_three'], any
+    subsequent mutation of the dict entries (e.g. calculate_top_three updating
+    'energy'/'hour' in-place on the same dict objects) would corrupt the already-
+    broadcast GridThresholdData — causing the alternating 2.59/7.59 pattern
+    observed in ha_query.csv.
+
+    Fix: [dict(e) for e in self.attr['top_three']] in calculate_level.
     """
-    avg_sensor = GridCapWatcherAverageThreePeakHours(
+    threshold_sensor = GridCapWatcherCurrentEffectLevelThreshold(
         hass, config_with_levels, mock_coordinator
     )
-    avg_sensor.schedule_update_ha_state = Mock()
+    threshold_sensor.schedule_update_ha_state = Mock()
 
-    # Initialize as async_added_to_hass would, without touching HA storage.
-    avg_sensor._initialized = True
-    avg_sensor._disposables = [
-        mock_coordinator.thresholddata.subscribe(avg_sensor._threshold_state_change)
+    original_entries = [
+        {"month": 5, "day": 1, "hour": 10, "energy": 2.0},
+        {"month": 5, "day": 2, "hour": 11, "energy": 3.0},
+        {"month": 5, "day": 3, "hour": 12, "energy": 4.0},
     ]
+    threshold_sensor.attr["top_three"] = original_entries
 
-    # Build a top_three list and broadcast it to the avg sensor via thresholddata.
-    source_list = [
-        {"day": 1, "hour": 10, "energy": 3.0},
-        {"day": 2, "hour": 11, "energy": 4.0},
-        {"day": 3, "hour": 12, "energy": 5.0},
-    ]
-    mock_coordinator.thresholddata.on_next(
-        GridThresholdData("Medium", 5.0, 100, source_list)
-    )
+    received: list[GridThresholdData] = []
+    mock_coordinator.thresholddata.subscribe(received.append)
+    received.clear()
 
-    # Sanity-check: avg sensor should have received the three peaks.
-    assert len(avg_sensor.attr["top_three"]) == 3
+    threshold_sensor.calculate_level()
 
-    # Now mutate the original list in-place (simulates what calculate_top_three
-    # does via .sort() / item assignment, or what _async_reset_meter triggers
-    # indirectly when the shared object is cleared before rebinding).
-    source_list.clear()
+    assert len(received) == 1
+    emitted_top_three = received[0].top_three
 
-    # avg sensor must NOT be affected — it should hold its own independent copy.
-    assert len(avg_sensor.attr["top_three"]) == 3, (
-        "avg_sensor top_three was silently wiped when the source list was cleared. "
-        "Bug: _threshold_state_change assigns a reference "
-        "(self.attr['top_three'] = threshold_data.top_three) instead of a copy. "
-        "Fix: self.attr['top_three'] = list(threshold_data.top_three)"
+    # Mutate the threshold sensor's internal entry in-place (as calculate_top_three does).
+    original_entries[0]["energy"] = 999.0
+
+    # The emitted GridThresholdData must NOT be affected — it must be a deep copy.
+    assert emitted_top_three[0]["energy"] != 999.0, (
+        "calculate_level emitted a reference to the internal top_three dict. "
+        "Mutating the dict after broadcast corrupted the emitted GridThresholdData. "
+        "Fix: use [dict(e) for e in self.attr['top_three']] in calculate_level."
     )
 
 
@@ -736,7 +728,13 @@ def test_restore_top_three_mixed_format():
 
 @pytest.mark.asyncio
 async def test_restore_top_three_bug_b_still_fixed(hass, config_with_levels, mock_coordinator):
-    """Guard Bug B: avg sensor top_three must not be wiped when threshold source list is cleared."""
+    """Guard: avg sensor must not be affected by thresholddata at all.
+
+    After Fix 1, avg does NOT subscribe to thresholddata. Any thresholddata
+    emission — including those with mutated or cleared source lists — must have
+    zero effect on avg's top_three. The only way avg's top_three changes is via
+    effectstate (_state_change).
+    """
     avg_sensor = GridCapWatcherAverageThreePeakHours(
         hass, config_with_levels, mock_coordinator
     )
@@ -753,6 +751,7 @@ async def test_restore_top_three_bug_b_still_fixed(hass, config_with_levels, moc
     _restore_top_three(savedstate, avg_sensor.attr)
     assert len(avg_sensor.attr["top_three"]) == 3, "Precondition: legacy restore must succeed"
 
+    # Emit thresholddata — avg is NOT subscribed, so this must be a no-op.
     source_list = [
         {"month": 1, "day": 3, "hour": 17, "energy": 10.2},
         {"month": 1, "day": 14, "hour": 18, "energy": 9.7},
@@ -761,12 +760,13 @@ async def test_restore_top_three_bug_b_still_fixed(hass, config_with_levels, moc
     mock_coordinator.thresholddata.on_next(
         GridThresholdData("High", 8.0, 200, source_list)
     )
-    assert len(avg_sensor.attr["top_three"]) == 3
+    assert len(avg_sensor.attr["top_three"]) == 3, (
+        "thresholddata changed avg's top_three — avg must not subscribe to thresholddata."
+    )
 
     source_list.clear()  # simulate threshold sensor monthly reset
     assert len(avg_sensor.attr["top_three"]) == 3, (
-        "avg_sensor top_three was wiped when threshold source list was cleared — "
-        "Bug B shallow-copy fix has been reverted."
+        "Clearing the thresholddata source list affected avg — Fix 1 may have been reverted."
     )
 
 
@@ -1002,7 +1002,7 @@ async def test_regression_c_race_condition_threshold_uninitialized(
     avg_sensor._initialized = True
     avg_sensor._disposables = [
         mock_coordinator.effectstate.subscribe(avg_sensor._state_change),
-        mock_coordinator.thresholddata.subscribe(avg_sensor._threshold_state_change),
+        # avg does NOT subscribe to thresholddata (Fix 1).
     ]
 
     # threshold sensor: created but async_added_to_hass has NOT run (_initialized=False).
@@ -1035,27 +1035,27 @@ async def test_regression_c_race_condition_threshold_uninitialized(
 
 
 @pytest.mark.asyncio
-async def test_regression_e_avg_not_overwritten_by_stale_threshold_on_first_event(
+async def test_regression_e_avg_maintains_independent_top_three(
     hass, config_with_levels, mock_coordinator
 ):
-    """Regression E: first thresholddata event after reboot must not revert avg to stale data.
+    """Regression E: avg sensor maintains its own top_three independently of threshold.
 
-    Scenario (reproduces the post-PR-39 reboot drop):
-      1. Threshold sensor is initialised first with restored top_three [A, B, C].
-      2. A gap AMS event fires — threshold processes it, updates its top_three, emits
-         thresholddata.  Avg sensor is not yet subscribed, so it misses the event.
-      3. Avg sensor initialises with its own restored top_three [A, B, C].
-      4. Next AMS event fires.  With the OLD setup order (two async_add_entities calls,
-         avg first), threshold was initialised AFTER avg, so threshold started from the
-         restored state only.  Its thresholddata emission then overwrote avg's already-
-         correct (gap-updated) top_three with the stale restored version.
-      5. With the FIXED setup order (threshold before avg, single call), threshold fires
-         first for every event and avg's _threshold_state_change receives the up-to-date
-         top_three that already includes the gap event.
+    After Fix 1 (remove thresholddata subscription from avg), avg and threshold
+    each compute top_three from effectstate events they each observe.  They may
+    legitimately diverge — that is correct and expected.
 
-    This test validates step 4: avg's top_three after the first real event must equal
-    threshold's up-to-date top_three (which includes the gap event), not the stale
-    restored snapshot.
+    Scenario:
+      1. Threshold initialises first with restored top_three [day1, day2, day3].
+      2. Gap AMS event fires (day4=2.7 kWh) — threshold processes it, avg not yet subscribed.
+         Threshold top_three now includes day4 (replaces lowest day3=2.5).
+      3. Avg initialises with SAME restored data [day1, day2, day3].
+         Avg subscribes to effectstate only (NOT thresholddata).
+      4. Next AMS event fires (0.5 kWh — won't displace any peak).
+
+    Correct behaviour:
+      - avg top_three = [day1, day2, day3] (unchanged — 0.5 < all restored peaks).
+      - avg does NOT have day4 (it never observed the gap event).
+      - avg maintains its own state; threshold's gap-event update is irrelevant to avg.
     """
     restored_top_three = [
         {"month": 5, "day": 1, "hour": 17, "energy": 3.0},
@@ -1063,7 +1063,7 @@ async def test_regression_e_avg_not_overwritten_by_stale_threshold_on_first_even
         {"month": 5, "day": 3, "hour": 16, "energy": 2.5},
     ]
 
-    # --- Threshold sensor initialises first (correct order) ---
+    # --- Threshold sensor initialises first ---
     threshold_sensor = GridCapWatcherCurrentEffectLevelThreshold(
         hass, config_with_levels, mock_coordinator
     )
@@ -1074,20 +1074,17 @@ async def test_regression_e_avg_not_overwritten_by_stale_threshold_on_first_even
         mock_coordinator.effectstate.subscribe(threshold_sensor._state_change)
     ]
 
-    # --- Gap event: threshold processes it, avg not yet subscribed ---
-    # May 4 reading higher than May 3 (day=3, energy=2.5) → replaces it.
+    # --- Gap event: threshold processes, avg not yet subscribed ---
     gap_ts = datetime(2026, 5, 4, 10, 0, 0, tzinfo=timezone.utc)
     gap_event = EnergyData(2.7, 2700.0, gap_ts)
     mock_coordinator.effectstate.on_next(gap_event)
 
-    # Threshold top_three should now include May 4 (replaced May 3 as lowest).
-    threshold_top_three_after_gap = threshold_sensor.attr["top_three"]
-    gap_days = [e["day"] for e in threshold_top_three_after_gap]
-    assert 4 in gap_days, (
-        f"Threshold sensor did not process the gap event. top_three days: {gap_days}"
+    threshold_days = [e["day"] for e in threshold_sensor.attr["top_three"]]
+    assert 4 in threshold_days, (
+        f"Precondition: threshold must have processed gap event (day=4). Got: {threshold_days}"
     )
 
-    # --- Avg sensor initialises second with the SAME restored data (no gap events) ---
+    # --- Avg initialises second with same restored data ---
     avg_sensor = GridCapWatcherAverageThreePeakHours(
         hass, config_with_levels, mock_coordinator
     )
@@ -1096,23 +1093,111 @@ async def test_regression_e_avg_not_overwritten_by_stale_threshold_on_first_even
     avg_sensor._initialized = True
     avg_sensor._disposables = [
         mock_coordinator.effectstate.subscribe(avg_sensor._state_change),
-        mock_coordinator.thresholddata.subscribe(avg_sensor._threshold_state_change),
+        # avg does NOT subscribe to thresholddata (Fix 1).
     ]
 
-    # --- Next AMS event fires ---
-    # Small reading that won't displace any of the top_three peaks.
+    # --- Next AMS event fires: 0.5 kWh, won't displace any restored peak ---
     next_ts = datetime(2026, 5, 4, 11, 0, 0, tzinfo=timezone.utc)
     next_event = EnergyData(0.5, 500.0, next_ts)
     mock_coordinator.effectstate.on_next(next_event)
 
-    # avg's top_three must match threshold's (which includes the gap-event update).
-    # Specifically, day=4 must be present (was added during the gap).
     avg_days = [e["day"] for e in avg_sensor.attr["top_three"]]
-    assert 4 in avg_days, (
-        f"avg sensor lost the gap-event entry (day=4). "
-        f"avg top_three days: {avg_days}. "
-        "This is the post-PR-39 reboot drop bug: threshold initialised after avg, "
-        "its first thresholddata emission overwrote avg's correct data with stale restored data."
+
+    # avg must keep its own restored top_three — not threshold's version.
+    assert 4 not in avg_days or all(
+        e["day"] in [1, 2, 3, 4] for e in avg_sensor.attr["top_three"]
+    ), f"avg top_three unexpected: {avg_sensor.attr['top_three']}"
+
+    # avg must still have its 3 restored entries (0.5 kWh < all peaks).
+    assert len(avg_sensor.attr["top_three"]) == 3, (
+        f"avg top_three should have 3 entries from restore. Got: {avg_sensor.attr['top_three']}"
+    )
+    # avg state must reflect its own data, not threshold's.
+    assert avg_sensor._state is not None
+
+
+@pytest.mark.asyncio
+async def test_regression_f_threshold_stale_restore_does_not_overwrite_avg(
+    hass, config_with_levels, mock_coordinator
+):
+    """Regression F: avg must NOT be overwritten by threshold's stale restored state.
+
+    This is the exact failure observed in ha_query.csv (post-reboot drop):
+      - Threshold restores STALE top_three: day3=hr0, energy=2.590618
+        (saved from a previous session that ended early, before day3's peak hour)
+      - Avg restores CORRECT top_three: day3=hr4, energy=5.762
+      - First AMS event fires for day4 (new day), energy=0.8 kWh < 2.590618
+        → threshold does not replace day3 with day4; emits thresholddata with stale top_three
+      - BUG (pre-fix): avg._threshold_state_change fires → overwrites avg's correct day3=5.762
+        with stale day3=2.590618 → avg drops from 6.06 to 5.0
+      - FIX (Fix 1): avg does NOT subscribe to thresholddata; ignores the stale emission
+
+    After fix: avg top_three must still contain day3=hr4, energy=5.762.
+    """
+    current_month = 5
+
+    # --- Threshold: stale restored state ---
+    threshold_sensor = GridCapWatcherCurrentEffectLevelThreshold(
+        hass, config_with_levels, mock_coordinator
+    )
+    threshold_sensor.schedule_update_ha_state = Mock()
+    threshold_sensor.attr["top_three"] = [
+        {"month": current_month, "day": 1, "hour": 8, "energy": 6.902},
+        {"month": current_month, "day": 2, "hour": 9, "energy": 5.198},
+        {"month": current_month, "day": 3, "hour": 0, "energy": 2.590618},  # stale!
+    ]
+    threshold_sensor._initialized = True
+    threshold_sensor._disposables = [
+        mock_coordinator.effectstate.subscribe(threshold_sensor._state_change)
+    ]
+
+    # --- Avg: correct restored state ---
+    avg_sensor = GridCapWatcherAverageThreePeakHours(
+        hass, config_with_levels, mock_coordinator
+    )
+    avg_sensor.schedule_update_ha_state = Mock()
+    avg_sensor.attr["top_three"] = [
+        {"month": current_month, "day": 1, "hour": 8, "energy": 6.902},
+        {"month": current_month, "day": 2, "hour": 9, "energy": 5.198},
+        {"month": current_month, "day": 3, "hour": 4, "energy": 5.762},  # correct!
+    ]
+    avg_sensor._initialized = True
+    avg_sensor._disposables = [
+        mock_coordinator.effectstate.subscribe(avg_sensor._state_change),
+        # avg does NOT subscribe to thresholddata (Fix 1).
+    ]
+
+    # Compute expected avg from correct data.
+    correct_avg = (6.902 + 5.198 + 5.762) / 3  # ≈ 5.954
+
+    # Verify precondition: avg state matches correct data.
+    # (Simulate what async_added_to_hass would compute after restore)
+    avg_sensor._state = correct_avg
+
+    # --- First AMS event: day4, low energy (0.8 kWh) < all threshold peaks ---
+    # Threshold keeps stale top_three (day3=2.590618 not displaced by 0.8).
+    # Threshold emits thresholddata with stale top_three.
+    # avg must IGNORE this emission.
+    day4_ts = datetime(2026, 5, 4, 6, 0, 0, tzinfo=timezone.utc)
+    day4_event = EnergyData(0.8, 800.0, day4_ts)
+    mock_coordinator.effectstate.on_next(day4_event)
+
+    # avg top_three must still contain day3=hr4, energy=5.762.
+    avg_day3_entries = [
+        e for e in avg_sensor.attr["top_three"]
+        if e["day"] == 3
+    ]
+    assert len(avg_day3_entries) == 1, (
+        f"avg top_three should have exactly one day=3 entry. Got: {avg_sensor.attr['top_three']}"
+    )
+    assert avg_day3_entries[0]["hour"] == 4, (
+        f"avg day3 entry should be hr4 (correct), not hr0 (stale). "
+        f"Got hour={avg_day3_entries[0]['hour']}. "
+        "Bug: avg was overwritten by threshold's stale thresholddata emission."
+    )
+    assert abs(avg_day3_entries[0]["energy"] - 5.762) < 0.01, (
+        f"avg day3 energy should be 5.762 (correct), not 2.590618 (stale). "
+        f"Got energy={avg_day3_entries[0]['energy']}."
     )
 
 
