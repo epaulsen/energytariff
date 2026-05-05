@@ -7,7 +7,7 @@ SENSOR_FILE="$SCRIPT_DIR/sensor-data.txt"
 
 while true
 do
-    rand=$(( ( RANDOM % 9000 ) + 1000 ))
+    rand=$(( ( RANDOM % 2001 ) + 7000 ))
     echo $rand > "$SENSOR_FILE"
     sleep 15
 done

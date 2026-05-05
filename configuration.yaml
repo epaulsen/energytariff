@@ -16,7 +16,7 @@ command_line:
       name: "power_usage"
       command: "cat /workspaces/energytariff/sensor-data.txt"
       unit_of_measurement: "W"
-      scan_interval: 15
+      scan_interval: 5
       value_template: "{{ value | trim }}"
 
 sensor:
