@@ -6,6 +6,7 @@
             "name": "Home Assistant",
             "type": "debugpy",
             "request": "launch",
+            "python": "/usr/local/bin/python",
             "module": "homeassistant",
             "args": [
                 "-c",
