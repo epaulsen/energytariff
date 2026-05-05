@@ -110,25 +110,25 @@ async def test_async_setup_platform_basic(hass, basic_config):
 async def test_async_setup_platform_with_levels(hass, config_with_levels):
     """Test sensor platform setup with grid levels configuration.
 
-    Threshold sensor must be initialised BEFORE the average sensor so that
-    threshold subscribes to effectstate first.  This prevents the startup race
-    where avg processes gap events that threshold misses, then threshold's first
-    thresholddata emission overwrites avg's correct data with stale restored data.
+    Legacy note: subscription order (threshold before avg) was previously required
+    to prevent a startup race condition.  avg now maintains its own top_three
+    independently and does not consume thresholddata, so order is no longer
+    functionally significant.  The entity list ordering below reflects the current
+    implementation but is not a correctness requirement.
     """
     mock_add_entities = Mock()
 
     await async_setup_platform(hass, config_with_levels, mock_add_entities)
 
     assert mock_add_entities.call_count == 1, (
-        "All entities must be added in a single async_add_entities call so that "
-        "threshold initialises before avg (correct subscription order)."
+        "All entities must be added in a single async_add_entities call."
     )
     entities = mock_add_entities.call_args[0][0]
     assert len(entities) == 7
     assert isinstance(entities[0], GridCapWatcherEnergySensor)
     assert isinstance(entities[1], GridCapWatcherEstimatedEnergySensor)
     assert isinstance(entities[2], GridCapWatcherAvailableEffectRemainingHour)
-    # Threshold sensors must come before the average sensor.
+    # Threshold sensors before average sensor (legacy ordering; not a correctness requirement).
     assert isinstance(entities[3], GridCapWatcherCurrentEffectLevelThreshold)
     assert isinstance(entities[4], GridCapacityWatcherCurrentLevelName)
     assert isinstance(entities[5], GridCapacityWatcherCurrentLevelPrice)
@@ -1023,7 +1023,7 @@ async def test_regression_c_race_condition_threshold_uninitialized(
         f"Got: {avg_sensor.attr['top_three']}"
     )
     energies = [e["energy"] for e in avg_sensor.attr["top_three"]]
-    assert 5.01 not in energies or len(avg_sensor.attr["top_three"]) == 3, (
+    assert 5.01 not in energies, (
         "avg top_three was overwritten with the stale single-entry thresholddata."
     )
     # State must still reflect original restored average, not the stale 5.01.
@@ -1041,21 +1041,26 @@ async def test_regression_e_avg_maintains_independent_top_three(
     """Regression E: avg sensor maintains its own top_three independently of threshold.
 
     After Fix 1 (remove thresholddata subscription from avg), avg and threshold
-    each compute top_three from effectstate events they each observe.  They may
-    legitimately diverge — that is correct and expected.
+    each compute top_three from effectstate events they each observe.
+
+    After Fix 3/4 (_initialized=True before subscribe), BehaviorSubject replays the
+    last effectstate value immediately when avg subscribes.  avg therefore DOES receive
+    the gap event via replay — this is correct and expected.
 
     Scenario:
       1. Threshold initialises first with restored top_three [day1, day2, day3].
-      2. Gap AMS event fires (day4=2.7 kWh) — threshold processes it, avg not yet subscribed.
+      2. Gap AMS event fires (day4=2.7 kWh) — threshold processes it via BehaviorSubject.
          Threshold top_three now includes day4 (replaces lowest day3=2.5).
       3. Avg initialises with SAME restored data [day1, day2, day3].
          Avg subscribes to effectstate only (NOT thresholddata).
+         BehaviorSubject replays gap event to avg immediately on subscribe.
+         Avg also processes day4 (replaces day3=2.5).
       4. Next AMS event fires (0.5 kWh — won't displace any peak).
 
-    Correct behaviour:
-      - avg top_three = [day1, day2, day3] (unchanged — 0.5 < all restored peaks).
-      - avg does NOT have day4 (it never observed the gap event).
-      - avg maintains its own state; threshold's gap-event update is irrelevant to avg.
+    Correct behaviour after Fix 3/4:
+      - avg top_three includes day4 (received via BehaviorSubject effectstate replay).
+      - avg did NOT receive day4 via thresholddata — it computed independently.
+      - avg's calculation matches expected: day4=2.7 displaced day3=2.5.
     """
     restored_top_three = [
         {"month": 5, "day": 1, "hour": 17, "energy": 3.0},
@@ -1103,14 +1108,19 @@ async def test_regression_e_avg_maintains_independent_top_three(
 
     avg_days = [e["day"] for e in avg_sensor.attr["top_three"]]
 
-    # avg must keep its own restored top_three — not threshold's version.
-    assert 4 not in avg_days or all(
-        e["day"] in [1, 2, 3, 4] for e in avg_sensor.attr["top_three"]
-    ), f"avg top_three unexpected: {avg_sensor.attr['top_three']}"
+    # avg receives the gap event via BehaviorSubject effectstate replay on subscribe
+    # (Fix 3/4: _initialized=True before subscribe, so replay is not dropped).
+    # day4=2.7 kWh displaces day3=2.5 kWh.
+    assert 4 in avg_days, (
+        f"avg should have day4 from effectstate BehaviorSubject replay: {avg_sensor.attr['top_three']}"
+    )
+    assert 3 not in avg_days, (
+        f"day3 (2.5 kWh) should be displaced by day4 (2.7 kWh): {avg_sensor.attr['top_three']}"
+    )
 
-    # avg must still have its 3 restored entries (0.5 kWh < all peaks).
+    # avg must still have its 3 restored entries.
     assert len(avg_sensor.attr["top_three"]) == 3, (
-        f"avg top_three should have 3 entries from restore. Got: {avg_sensor.attr['top_three']}"
+        f"avg top_three should have 3 entries. Got: {avg_sensor.attr['top_three']}"
     )
     # avg state must reflect its own data, not threshold's.
     assert avg_sensor._state is not None
@@ -1232,4 +1242,38 @@ async def test_regression_d_stale_energy_not_restored(hass, basic_config, mock_c
     assert sensor._state == 0 or sensor._state is None, (
         f"Energy sensor restored stale value {sensor._state} from a previous hour. "
         "Expected 0 or None after a multi-hour gap (stale hourly accumulator must be discarded)."
+    )
+
+
+@pytest.mark.asyncio
+async def test_energy_sensor_restores_same_hour_energy(hass, basic_config, mock_coordinator):
+    """Same-hour restore: energy value saved within the current hour must be kept.
+
+    Branch under test (sensor.py async_added_to_hass):
+        if dt.as_local(last_state.last_updated) >= current_hour_start:
+            self._state = float(savedstate.native_value)  # ← this branch
+
+    A bug that always resets _state to 0 / None would fail here.
+    """
+    sensor = GridCapWatcherEnergySensor(hass, basic_config, mock_coordinator)
+
+    saved_sensor_data = Mock()
+    saved_sensor_data.native_value = 0.5  # 0.5 kWh accumulated this hour
+
+    # Anchor last_updated to current_hour_start + 1 min so the test is never
+    # sensitive to when (in the hour) it runs.
+    from custom_components.energytariff.utils import start_of_current_hour
+    current_hour_start = start_of_current_hour(dt.as_local(dt.now()))
+    recent_last_updated = current_hour_start + timedelta(minutes=1)
+    last_state = Mock()
+    last_state.last_updated = recent_last_updated
+
+    sensor.async_get_last_sensor_data = AsyncMock(return_value=saved_sensor_data)
+    sensor.async_get_last_state = AsyncMock(return_value=last_state)
+
+    await sensor.async_added_to_hass()
+
+    assert sensor._state == pytest.approx(0.5), (
+        f"Energy sensor lost same-hour state: got {sensor._state!r}, expected 0.5. "
+        "Bug: restore logic always resets to 0 instead of keeping the saved value."
     )

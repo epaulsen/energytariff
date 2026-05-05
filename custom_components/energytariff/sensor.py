@@ -81,10 +81,9 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     """Setup sensor platform."""
     rx_coord = GridCapacityCoordinator(hass)
 
-    # All entities in a single async_add_entities call.  Threshold sensors are
-    # listed before the average sensor so both subscribe to effectstate in the
-    # correct order (threshold first).  avg maintains its own top_three
-    # independently via effectstate and does NOT subscribe to thresholddata.
+    # Both sensors subscribe to effectstate independently; order is not
+    # functionally significant.  avg maintains its own top_three and does NOT
+    # consume thresholddata.
     entities: list = [
         GridCapWatcherEnergySensor(hass, config, rx_coord),
         GridCapWatcherEstimatedEnergySensor(hass, config, rx_coord),
@@ -382,10 +381,10 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor):
 
         # Subscribe only after restoration so the first callback processes
         # correct (restored) top_three data and does not emit stale thresholddata.
+        self._initialized = True
         self._disposables = [
             self._coordinator.effectstate.subscribe(self._state_change)
         ]
-        self._initialized = True
 
     async def async_will_remove_from_hass(self) -> None:
         for d in self._disposables:
@@ -548,10 +547,10 @@ class GridCapWatcherAverageThreePeakHours(RestoreSensor):
         # independently via effectstate and does NOT consume thresholddata —
         # that subscription was the root cause of the post-reboot drop bug where
         # threshold's stale restored top_three overwrote avg's correct data.
+        self._initialized = True
         self._disposables = [
             self._coordinator.effectstate.subscribe(self._state_change)
         ]
-        self._initialized = True
 
     async def async_will_remove_from_hass(self) -> None:
         for d in self._disposables:
