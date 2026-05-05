@@ -15,7 +15,44 @@
 
 ## Learnings
 
-### 2026-01 CSV Analysis & Synthetic Data Generation
+### 2026-05-04 Post-Reboot Drop — thresholddata Subscription + Deep Copy Bugs
+
+**Source:** `ha_query.csv` — HA database dump showing pre/post-reboot sensor values.
+
+**Bug 1 — thresholddata overwrites avg's correct restored top_three:**
+- avg subscribed to thresholddata via `_threshold_state_change` (shallow copy).
+- On reboot, threshold restores stale top_three (session ended before day3's peak), avg restores correct one.
+- First AMS event < stale threshold entry → threshold keeps stale top_three, emits it.
+- `_threshold_state_change` fires → avg's correct data overwritten with stale data → drop observed.
+- Fix: remove thresholddata subscription entirely. Avg maintains own top_three via effectstate.
+
+**Bug 2 — shallow dict copy causes alternating corruption (2.59 ↔ 7.59 pattern):**
+- `calculate_level()` passed `self.attr["top_three"]` (direct reference) to GridThresholdData.
+- `calculate_top_three` mutates dict entries in-place; same dict objects in broadcast → corrupted.
+- 7.590618 = 2.590618 + 5.0 (energy field mutated by the next calculate_top_three call).
+- Fix: `[dict(e) for e in self.attr["top_three"]]` — new list AND new dicts per entry.
+
+**Pattern learned:** Never pass internal mutable state by reference to event buses/BehaviorSubjects.
+Deep copy before emitting. Sensors that maintain related state should compute independently,
+not synchronize via re-emitted values from restored (potentially stale) peers.
+
+**Commit:** d4b84b0 on `fix/average-peak-drops`
+**Tests:** 40/40 pass (+1 regression F, 4 existing tests updated)
+
+### 2026-05-04 Post-PR-39 Reboot Drop — Initialization Ordering Bug
+
+**Bug:** After reboot with PR-39 fixes deployed, `sensor.average_peak_hour_energy` showed lower average and different `top_three` entries.
+
+**Root cause:** Two `async_add_entities` calls placed avg sensor in batch 1 and threshold sensor in batch 2. Avg subscribed to `effectstate` before threshold. AMS events fired in the gap (HA startup ~10s, AMS interval ~2-10s). Avg processed gap events; threshold did not. Threshold's first event emitted `thresholddata` with stale restored `top_three`. `_threshold_state_change` overwrote avg's correct (gap-updated) data.
+
+**Fix:** Single `async_add_entities` call. Threshold sensors placed BEFORE avg sensor. Threshold now subscribes to effectstate first → fires first per event → emits current thresholddata → avg gets up-to-date data via `_threshold_state_change` → avg's own `_state_change` is a no-op (Case 2 same-event idempotent).
+
+**Pattern learned:** When sensor A's state depends on sensor B's data via BehaviorSubject, sensor B must subscribe to the shared observable FIRST (initialize earlier in entity list). BehaviorSubject only replays the last value; events emitted during the initialization gap are NOT replayed. The `_initialized=False` guard only protects the subscribing sensor from replayed startup data, NOT from stale emissions from other sensors that initialized later.
+
+**Files changed:** `sensor.py` (setup order), `tests/test_sensor.py` (+1 regression test, updated 2 setup tests)  
+**Commit:** 0575f67 on `fix/average-peak-drops`
+
+
 
 **Source files analysed (logfiles/):**
 - `history.csv` — sensor_1: ~10s intervals, high heating load (mean 5065W, max 11812W). Large house.

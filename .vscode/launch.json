@@ -3,16 +3,17 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Python: Launch HomeAssistant",
-            "type": "python",
+            "name": "Home Assistant",
+            "type": "debugpy",
             "request": "launch",
-            "program": "/home/vscode/.local/bin/hass",
+            "python": "/usr/local/bin/python",
+            "module": "homeassistant",
             "args": [
                 "-c",
                 "${workspaceFolder}",
                 "--debug"
             ],
-            "justMyCode": true
+            "justMyCode": false
         }
     ]
 }

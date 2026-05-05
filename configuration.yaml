@@ -11,12 +11,15 @@ homeassistant:
   allowlist_external_dirs:
     - "/workspaces/energytariff"
 
-sensor:
-  - platform: file
-    name: "power_usage"
-    unit_of_measurement: "W"
-    file_path: /workspaces/energytariff/sensor-data.txt
+command_line:
+  - sensor:
+      name: "power_usage"
+      command: "cat /workspaces/energytariff/sensor-data.txt"
+      unit_of_measurement: "W"
+      scan_interval: 5
+      value_template: "{{ value | trim }}"
 
+sensor:
   - platform: energytariff
     entity_id: "sensor.power_usage"
     max_power: 15900
