@@ -69,7 +69,7 @@ LEVEL_SCHEMA = vol.Schema(
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_EFFECT_ENTITY): cv.string,
-        vol.Optional(TARGET_ENERGY): cv.positive_float,
+        vol.Optional(TARGET_ENERGY): vol.Any(cv.positive_float, cv.entity_id),
         vol.Optional(MAX_EFFECT_ALLOWED): cv.positive_float,
         vol.Optional(ROUNDING_PRECISION): cv.positive_int,
         vol.Optional(GRID_LEVELS): vol.All(cv.ensure_list, [LEVEL_SCHEMA]),
@@ -644,7 +644,20 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor):
         self._coordinator = rx_coord
         self._precision = get_rounding_precision(config)
         self._max_effect = config.get(MAX_EFFECT_ALLOWED)
-        self._target_energy = config.get(TARGET_ENERGY)
+
+        target_energy_config = config.get(TARGET_ENERGY)
+        if isinstance(target_energy_config, str):
+            # An entity_id was provided; resolve the value dynamically.
+            self._target_energy_entity_id: str | None = target_energy_config
+            self._target_energy: float | None = None
+            self._unsub_target_entity = async_track_state_change_event(
+                hass, self._target_energy_entity_id, self._async_on_target_energy_change
+            )
+        else:
+            self._target_energy_entity_id = None
+            self._target_energy = target_energy_config
+            self._unsub_target_entity = None
+
         self._state = None
         self.attr = {"grid_threshold_level": self._target_energy}
 
@@ -662,6 +675,7 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor):
     async def async_added_to_hass(self) -> None:
         """Call when entity about to be added to hass."""
         await super().async_added_to_hass()
+
         savedstate = await self.async_get_last_state()
         if savedstate:
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
@@ -670,11 +684,50 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor):
                 self.attr["grid_threshold_level"] = savedstate.attributes[
                     "grid_threshold_level"
                 ]
+
+        # If target_energy is entity-based, read its current state immediately.
+        # This runs after saved-state restoration so the live entity value takes
+        # priority over any previously saved grid_threshold_level.
+        if self._target_energy_entity_id is not None:
+            state = self._hass.states.get(self._target_energy_entity_id)
+            if state is not None and state.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+                try:
+                    self._target_energy = float(state.state)
+                    self.attr["grid_threshold_level"] = self._target_energy
+                except ValueError:
+                    _LOGGER.warning(
+                        "Could not parse state '%s' of target_energy entity '%s' as a number",
+                        state.state,
+                        self._target_energy_entity_id,
+                    )
+
+        if savedstate:
             self.__calculate()
 
     async def async_will_remove_from_hass(self) -> None:
         for d in self._disposables:
             d.dispose()
+        if self._unsub_target_entity is not None:
+            self._unsub_target_entity()
+
+    @callback
+    def _async_on_target_energy_change(self, event: Event[EventStateChangedData]) -> None:
+        """Handle state changes of the target_energy entity."""
+        new_state = event.data["new_state"]
+        if new_state is None or new_state.state in (STATE_UNKNOWN, STATE_UNAVAILABLE):
+            return
+        try:
+            self._target_energy = float(new_state.state)
+            self.attr["grid_threshold_level"] = self._target_energy
+        except ValueError:
+            _LOGGER.warning(
+                "Could not parse state '%s' of target_energy entity '%s' as a number",
+                new_state.state,
+                self._target_energy_entity_id,
+            )
+            return
+        self.__calculate()
+        self.schedule_update_ha_state(True)
 
     def _threshold_state_change(self, state: GridThresholdData):
         if state is None:

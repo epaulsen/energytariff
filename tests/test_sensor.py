@@ -23,7 +23,7 @@ from custom_components.energytariff.sensor import (
     GridCapacityWatcherCurrentLevelPrice,
     _restore_top_three,
     LEVEL_SCHEMA,
-    _restore_top_three,
+    PLATFORM_SCHEMA,
 )
 from custom_components.energytariff.coordinator import (
     GridCapacityCoordinator,
@@ -1277,3 +1277,262 @@ async def test_energy_sensor_restores_same_hour_energy(hass, basic_config, mock_
         f"Energy sensor lost same-hour state: got {sensor._state!r}, expected 0.5. "
         "Bug: restore logic always resets to 0 instead of keeping the saved value."
     )
+
+
+# ---------------------------------------------------------------------------
+# Feature: target_energy accepts an entity_id for dynamic threshold tracking
+# ---------------------------------------------------------------------------
+
+
+def test_platform_schema_accepts_float_target_energy():
+    """Backwards-compat: a plain float for target_energy must still be accepted."""
+    config = PLATFORM_SCHEMA(
+        {
+            "platform": "energytariff",
+            CONF_EFFECT_ENTITY: "sensor.power_meter",
+            TARGET_ENERGY: 5.0,
+        }
+    )
+    assert config[TARGET_ENERGY] == 5.0
+
+
+def test_platform_schema_accepts_entity_id_target_energy():
+    """New feature: an entity_id string must now be accepted for target_energy."""
+    config = PLATFORM_SCHEMA(
+        {
+            "platform": "energytariff",
+            CONF_EFFECT_ENTITY: "sensor.power_meter",
+            TARGET_ENERGY: "sensor.elvia_tariff_level",
+        }
+    )
+    assert config[TARGET_ENERGY] == "sensor.elvia_tariff_level"
+
+
+@pytest.mark.asyncio
+async def test_available_effect_sensor_entity_target_initialization(hass, mock_coordinator):
+    """With entity_id as target_energy, _target_energy_entity_id is set and _target_energy is None."""
+    config = {
+        CONF_EFFECT_ENTITY: "sensor.power_meter",
+        TARGET_ENERGY: "sensor.elvia_tariff_level",
+        ROUNDING_PRECISION: 2,
+    }
+    sensor = GridCapWatcherAvailableEffectRemainingHour(hass, config, mock_coordinator)
+
+    assert sensor._target_energy_entity_id == "sensor.elvia_tariff_level"
+    assert sensor._target_energy is None
+    assert sensor._unsub_target_entity is not None
+
+
+@pytest.mark.asyncio
+async def test_available_effect_sensor_float_target_no_entity_tracking(hass, mock_coordinator):
+    """With a float target_energy, no entity tracking subscription is created."""
+    config = {
+        CONF_EFFECT_ENTITY: "sensor.power_meter",
+        TARGET_ENERGY: 10.0,
+        ROUNDING_PRECISION: 2,
+    }
+    sensor = GridCapWatcherAvailableEffectRemainingHour(hass, config, mock_coordinator)
+
+    assert sensor._target_energy_entity_id is None
+    assert sensor._target_energy == 10.0
+    assert sensor._unsub_target_entity is None
+
+
+@pytest.mark.asyncio
+async def test_available_effect_entity_target_state_change(hass, mock_coordinator):
+    """When the target entity state changes, _target_energy is updated and calculation runs."""
+    config = {
+        CONF_EFFECT_ENTITY: "sensor.power_meter",
+        TARGET_ENERGY: "sensor.elvia_tariff_level",
+        ROUNDING_PRECISION: 2,
+    }
+    sensor = GridCapWatcherAvailableEffectRemainingHour(hass, config, mock_coordinator)
+    sensor.schedule_update_ha_state = Mock()
+
+    # Seed energy and power so __calculate can produce a result.
+    sensor._energy = 2.0
+    sensor._effect = 1000.0
+
+    # Simulate a state-change event from the target entity.
+    new_state = Mock()
+    new_state.state = "8.0"
+    event_data = {"old_state": Mock(), "new_state": new_state}
+    event = Mock(spec=Event)
+    event.data = event_data
+
+    sensor._async_on_target_energy_change(event)
+
+    assert sensor._target_energy == 8.0
+    assert sensor._state is not None
+    assert sensor.schedule_update_ha_state.called
+
+
+@pytest.mark.asyncio
+async def test_available_effect_entity_target_ignores_unavailable(hass, mock_coordinator):
+    """An unavailable/unknown state on the target entity must not update _target_energy."""
+    config = {
+        CONF_EFFECT_ENTITY: "sensor.power_meter",
+        TARGET_ENERGY: "sensor.elvia_tariff_level",
+        ROUNDING_PRECISION: 2,
+    }
+    sensor = GridCapWatcherAvailableEffectRemainingHour(hass, config, mock_coordinator)
+    sensor.schedule_update_ha_state = Mock()
+    sensor._target_energy = 5.0  # previously resolved
+
+    for bad_state in (STATE_UNAVAILABLE, STATE_UNKNOWN, None):
+        new_state = Mock()
+        new_state.state = bad_state if bad_state is not None else STATE_UNAVAILABLE
+        event_data = {"old_state": Mock(), "new_state": new_state if bad_state is not None else None}
+        event = Mock(spec=Event)
+        event.data = event_data
+
+        sensor._async_on_target_energy_change(event)
+
+    assert sensor._target_energy == 5.0, "target_energy must not be cleared by unavailable state"
+
+
+@pytest.mark.asyncio
+async def test_available_effect_entity_target_ignores_non_numeric(hass, mock_coordinator):
+    """A non-numeric state on the target entity must log a warning and leave _target_energy unchanged."""
+    config = {
+        CONF_EFFECT_ENTITY: "sensor.power_meter",
+        TARGET_ENERGY: "sensor.elvia_tariff_level",
+        ROUNDING_PRECISION: 2,
+    }
+    sensor = GridCapWatcherAvailableEffectRemainingHour(hass, config, mock_coordinator)
+    sensor.schedule_update_ha_state = Mock()
+    sensor._target_energy = 5.0
+
+    new_state = Mock()
+    new_state.state = "not-a-number"
+    event_data = {"old_state": Mock(), "new_state": new_state}
+    event = Mock(spec=Event)
+    event.data = event_data
+
+    sensor._async_on_target_energy_change(event)
+
+    assert sensor._target_energy == 5.0, "target_energy must not change when state is non-numeric"
+    assert not sensor.schedule_update_ha_state.called
+
+
+@pytest.mark.asyncio
+async def test_available_effect_entity_target_reads_initial_state(hass, mock_coordinator):
+    """async_added_to_hass reads the current state of the target entity."""
+    config = {
+        CONF_EFFECT_ENTITY: "sensor.power_meter",
+        TARGET_ENERGY: "sensor.elvia_tariff_level",
+        ROUNDING_PRECISION: 2,
+    }
+
+    # Seed HA state for the target entity before setup.
+    hass.states.async_set("sensor.elvia_tariff_level", "12.5")
+
+    sensor = GridCapWatcherAvailableEffectRemainingHour(hass, config, mock_coordinator)
+    sensor.async_get_last_state = AsyncMock(return_value=None)
+
+    await sensor.async_added_to_hass()
+
+    assert sensor._target_energy == pytest.approx(12.5), (
+        f"Expected _target_energy=12.5 from initial entity state, got {sensor._target_energy}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_available_effect_entity_target_initial_unavailable_state(hass, mock_coordinator):
+    """If the target entity is unavailable at startup, _target_energy remains None."""
+    config = {
+        CONF_EFFECT_ENTITY: "sensor.power_meter",
+        TARGET_ENERGY: "sensor.elvia_tariff_level",
+        ROUNDING_PRECISION: 2,
+    }
+
+    hass.states.async_set("sensor.elvia_tariff_level", STATE_UNAVAILABLE)
+
+    sensor = GridCapWatcherAvailableEffectRemainingHour(hass, config, mock_coordinator)
+    sensor.async_get_last_state = AsyncMock(return_value=None)
+
+    await sensor.async_added_to_hass()
+
+    assert sensor._target_energy is None
+
+
+@pytest.mark.asyncio
+async def test_available_effect_unsubscribes_target_entity_on_remove(hass, mock_coordinator):
+    """async_will_remove_from_hass must cancel the target entity subscription."""
+    config = {
+        CONF_EFFECT_ENTITY: "sensor.power_meter",
+        TARGET_ENERGY: "sensor.elvia_tariff_level",
+        ROUNDING_PRECISION: 2,
+    }
+    sensor = GridCapWatcherAvailableEffectRemainingHour(hass, config, mock_coordinator)
+
+    mock_unsub = Mock()
+    sensor._unsub_target_entity = mock_unsub
+
+    await sensor.async_will_remove_from_hass()
+
+    mock_unsub.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_available_effect_entity_target_full_calculation(hass, mock_coordinator):
+    """End-to-end: entity-based target_energy drives the available-power calculation correctly."""
+    config = {
+        CONF_EFFECT_ENTITY: "sensor.power_meter",
+        TARGET_ENERGY: "sensor.elvia_tariff_level",
+        ROUNDING_PRECISION: 2,
+    }
+
+    hass.states.async_set("sensor.elvia_tariff_level", "10.0")
+
+    sensor = GridCapWatcherAvailableEffectRemainingHour(hass, config, mock_coordinator)
+    sensor.async_get_last_state = AsyncMock(return_value=None)
+    sensor.schedule_update_ha_state = Mock()
+
+    await sensor.async_added_to_hass()
+
+    assert sensor._target_energy == pytest.approx(10.0)
+    assert sensor.attr["grid_threshold_level"] == pytest.approx(10.0)
+
+    # Feed energy data via the effectstate coordinator.
+    energy_data = EnergyData(2.0, 1000.0, dt.now())
+    sensor._effect_state_change(energy_data)
+
+    assert sensor._state is not None, "Sensor must calculate a value when target entity is set"
+    assert sensor.schedule_update_ha_state.called
+
+
+@pytest.mark.asyncio
+async def test_available_effect_entity_target_ha_state_change_integration(hass, mock_coordinator):
+    """Integration: sensor responds to HA state-change events for the target entity.
+
+    This test wires up the real async_track_state_change_event subscription and
+    verifies the sensor updates when hass.states.async_set is called.
+    """
+    config = {
+        CONF_EFFECT_ENTITY: "sensor.power_meter",
+        TARGET_ENERGY: "sensor.elvia_tariff_level",
+        ROUNDING_PRECISION: 2,
+    }
+
+    hass.states.async_set("sensor.elvia_tariff_level", "5.0")
+
+    sensor = GridCapWatcherAvailableEffectRemainingHour(hass, config, mock_coordinator)
+    sensor.async_get_last_state = AsyncMock(return_value=None)
+    sensor.schedule_update_ha_state = Mock()
+    sensor._energy = 1.0
+    sensor._effect = 500.0
+
+    await sensor.async_added_to_hass()
+    assert sensor._target_energy == pytest.approx(5.0)
+
+    # Change the target entity state via HA — this fires the tracked event.
+    hass.states.async_set("sensor.elvia_tariff_level", "8.0")
+    await hass.async_block_till_done()
+
+    assert sensor._target_energy == pytest.approx(8.0), (
+        f"Expected _target_energy to update to 8.0 after HA state change, got {sensor._target_energy}"
+    )
+    assert sensor.attr["grid_threshold_level"] == pytest.approx(8.0)
+    assert sensor._state is not None
+
