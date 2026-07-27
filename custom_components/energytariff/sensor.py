@@ -281,6 +281,11 @@ class GridCapWatcherEstimatedEnergySensor(SensorEntity):
             )
         )
 
+        self._disposables = []
+
+    async def async_added_to_hass(self) -> None:
+        """Call when entity about to be added to hass."""
+        await super().async_added_to_hass()
         self._disposables = [
             self._coordinator.effectstate.subscribe(self._state_change)
         ]

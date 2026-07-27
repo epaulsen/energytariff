@@ -255,6 +255,26 @@ async def test_estimated_energy_sensor_state_change(hass, basic_config, mock_coo
 
 
 @pytest.mark.asyncio
+async def test_estimated_energy_subscribes_only_after_added_to_hass(
+    hass, basic_config, mock_coordinator
+):
+    """Regression #47: estimated sensor must ignore pre-add coordinator emissions."""
+    sensor = GridCapWatcherEstimatedEnergySensor(hass, basic_config, mock_coordinator)
+    sensor.schedule_update_ha_state = Mock()
+
+    mock_coordinator.effectstate.on_next(EnergyData(2.0, 1000.0, dt.now()))
+    assert sensor._state is None
+    assert not sensor.schedule_update_ha_state.called
+
+    await sensor.async_added_to_hass()
+
+    sensor.schedule_update_ha_state.reset_mock()
+    mock_coordinator.effectstate.on_next(EnergyData(2.0, 1000.0, dt.now()))
+    assert sensor._state is not None
+    assert sensor.schedule_update_ha_state.called
+
+
+@pytest.mark.asyncio
 async def test_average_peak_hours_initialization(hass, basic_config, mock_coordinator):
     """Test GridCapWatcherAverageThreePeakHours initialization."""
     sensor = GridCapWatcherAverageThreePeakHours(hass, basic_config, mock_coordinator)
