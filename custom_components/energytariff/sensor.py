@@ -672,10 +672,9 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor):
             )
         )
 
-        self._disposables = [
-            self._coordinator.thresholddata.subscribe(self._threshold_state_change),
-            self._coordinator.effectstate.subscribe(self._effect_state_change),
-        ]
+        # Subscribe after entity is attached to hass to avoid callback-triggered
+        # schedule_update_ha_state calls while self.hass is still None.
+        self._disposables = []
 
     async def async_added_to_hass(self) -> None:
         """Call when entity about to be added to hass."""
@@ -705,6 +704,11 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor):
 
         if savedstate:
             self.__calculate()
+
+        self._disposables = [
+            self._coordinator.thresholddata.subscribe(self._threshold_state_change),
+            self._coordinator.effectstate.subscribe(self._effect_state_change),
+        ]
 
     async def async_will_remove_from_hass(self) -> None:
         for d in self._disposables:
@@ -845,9 +849,7 @@ class GridCapacityWatcherCurrentLevelName(RestoreSensor):
         self._state = None
         self._attr_unique_id = f"{DOMAIN}_effect_level_name".replace("sensor.", "")
 
-        self._disposables = [
-            self._coordinator.thresholddata.subscribe(self._threshold_state_change)
-        ]
+        self._disposables = []
 
     def _threshold_state_change(self, state: GridThresholdData):
         if state is None:
@@ -862,6 +864,9 @@ class GridCapacityWatcherCurrentLevelName(RestoreSensor):
         if savedstate:
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 self._state = savedstate.state
+        self._disposables = [
+            self._coordinator.thresholddata.subscribe(self._threshold_state_change)
+        ]
 
     async def async_will_remove_from_hass(self) -> None:
         for d in self._disposables:
@@ -912,9 +917,7 @@ class GridCapacityWatcherCurrentLevelPrice(RestoreSensor):
         self._state = None
         self._attr_unique_id = f"{DOMAIN}_effect_level_price".replace("sensor.", "")
 
-        self._disposables = [
-            self._coordinator.thresholddata.subscribe(self._threshold_state_change)
-        ]
+        self._disposables = []
 
     def _threshold_state_change(self, state: GridThresholdData):
         if state is None:
@@ -929,6 +932,9 @@ class GridCapacityWatcherCurrentLevelPrice(RestoreSensor):
         if savedstate:
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 self._state = savedstate.state
+        self._disposables = [
+            self._coordinator.thresholddata.subscribe(self._threshold_state_change)
+        ]
 
     async def async_will_remove_from_hass(self) -> None:
         for d in self._disposables:

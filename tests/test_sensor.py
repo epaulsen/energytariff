@@ -422,6 +422,29 @@ async def test_level_name_sensor_threshold_change(hass, config_with_levels, mock
 
 
 @pytest.mark.asyncio
+async def test_level_name_subscribes_only_after_added_to_hass(
+    hass, config_with_levels, mock_coordinator
+):
+    """Regression #47: pre-add threshold emissions must not schedule HA updates."""
+    sensor = GridCapacityWatcherCurrentLevelName(
+        hass, config_with_levels, mock_coordinator
+    )
+    sensor.schedule_update_ha_state = Mock()
+
+    mock_coordinator.thresholddata.on_next(GridThresholdData("Low", 2.0, 50, []))
+    assert sensor._state is None
+    assert not sensor.schedule_update_ha_state.called
+
+    sensor.async_get_last_state = AsyncMock(return_value=None)
+    await sensor.async_added_to_hass()
+
+    sensor.schedule_update_ha_state.reset_mock()
+    mock_coordinator.thresholddata.on_next(GridThresholdData("High", 8.0, 200, []))
+    assert sensor._state == "High"
+    assert sensor.schedule_update_ha_state.called
+
+
+@pytest.mark.asyncio
 async def test_level_price_sensor_initialization(hass, config_with_levels, mock_coordinator):
     """Test GridCapacityWatcherCurrentLevelPrice initialization."""
     sensor = GridCapacityWatcherCurrentLevelPrice(
@@ -445,6 +468,29 @@ async def test_level_price_sensor_threshold_change(hass, config_with_levels, moc
     sensor._threshold_state_change(threshold_data)
     
     assert sensor._state == 200
+    assert sensor.schedule_update_ha_state.called
+
+
+@pytest.mark.asyncio
+async def test_level_price_subscribes_only_after_added_to_hass(
+    hass, config_with_levels, mock_coordinator
+):
+    """Regression #47: pre-add threshold emissions must not schedule HA updates."""
+    sensor = GridCapacityWatcherCurrentLevelPrice(
+        hass, config_with_levels, mock_coordinator
+    )
+    sensor.schedule_update_ha_state = Mock()
+
+    mock_coordinator.thresholddata.on_next(GridThresholdData("Low", 2.0, 50, []))
+    assert sensor._state is None
+    assert not sensor.schedule_update_ha_state.called
+
+    sensor.async_get_last_state = AsyncMock(return_value=None)
+    await sensor.async_added_to_hass()
+
+    sensor.schedule_update_ha_state.reset_mock()
+    mock_coordinator.thresholddata.on_next(GridThresholdData("Medium", 5.0, 100, []))
+    assert sensor._state == 100
     assert sensor.schedule_update_ha_state.called
 
 
@@ -1344,6 +1390,30 @@ async def test_available_effect_sensor_float_target_no_template_tracking(hass, m
 
 
 @pytest.mark.asyncio
+async def test_available_effect_subscribes_only_after_added_to_hass(hass, mock_coordinator):
+    """Regression #47: pre-add coordinator emissions must not schedule HA updates."""
+    config = {
+        CONF_EFFECT_ENTITY: "sensor.power_meter",
+        TARGET_ENERGY: 10.0,
+        ROUNDING_PRECISION: 2,
+    }
+    sensor = GridCapWatcherAvailableEffectRemainingHour(hass, config, mock_coordinator)
+    sensor.schedule_update_ha_state = Mock()
+
+    mock_coordinator.effectstate.on_next(EnergyData(2.0, 1000.0, dt.now()))
+    assert sensor._state is None
+    assert not sensor.schedule_update_ha_state.called
+
+    sensor.async_get_last_state = AsyncMock(return_value=None)
+    await sensor.async_added_to_hass()
+
+    sensor.schedule_update_ha_state.reset_mock()
+    mock_coordinator.effectstate.on_next(EnergyData(2.0, 1000.0, dt.now()))
+    assert sensor._state is not None
+    assert sensor.schedule_update_ha_state.called
+
+
+@pytest.mark.asyncio
 async def test_available_effect_template_target_result_change(hass, mock_coordinator):
     """When the template result changes, _target_energy is updated and calculation runs."""
     tmpl = template_helper.Template(_TARIFF_TEMPLATE, hass)
@@ -1541,4 +1611,3 @@ async def test_available_effect_template_target_ha_state_change_integration(hass
     )
     assert sensor.attr["grid_threshold_level"] == pytest.approx(8.0)
     assert sensor._state is not None
-
