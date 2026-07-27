@@ -385,6 +385,7 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor):
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 self._state = float(savedstate.state)
             _restore_top_three(savedstate, self.attr)
+            self.calculate_level()
 
         # Subscribe only after restoration so the first callback processes
         # correct (restored) top_three data and does not emit stale thresholddata.
@@ -845,9 +846,7 @@ class GridCapacityWatcherCurrentLevelName(RestoreSensor):
         self._state = None
         self._attr_unique_id = f"{DOMAIN}_effect_level_name".replace("sensor.", "")
 
-        self._disposables = [
-            self._coordinator.thresholddata.subscribe(self._threshold_state_change)
-        ]
+        self._disposables = []
 
     def _threshold_state_change(self, state: GridThresholdData):
         if state is None:
@@ -862,6 +861,9 @@ class GridCapacityWatcherCurrentLevelName(RestoreSensor):
         if savedstate:
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 self._state = savedstate.state
+        self._disposables = [
+            self._coordinator.thresholddata.subscribe(self._threshold_state_change)
+        ]
 
     async def async_will_remove_from_hass(self) -> None:
         for d in self._disposables:
@@ -912,9 +914,7 @@ class GridCapacityWatcherCurrentLevelPrice(RestoreSensor):
         self._state = None
         self._attr_unique_id = f"{DOMAIN}_effect_level_price".replace("sensor.", "")
 
-        self._disposables = [
-            self._coordinator.thresholddata.subscribe(self._threshold_state_change)
-        ]
+        self._disposables = []
 
     def _threshold_state_change(self, state: GridThresholdData):
         if state is None:
@@ -929,6 +929,9 @@ class GridCapacityWatcherCurrentLevelPrice(RestoreSensor):
         if savedstate:
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 self._state = savedstate.state
+        self._disposables = [
+            self._coordinator.thresholddata.subscribe(self._threshold_state_change)
+        ]
 
     async def async_will_remove_from_hass(self) -> None:
         for d in self._disposables:

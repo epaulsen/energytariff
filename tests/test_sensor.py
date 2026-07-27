@@ -395,6 +395,56 @@ async def test_threshold_sensor_calculate_level_repro(hass, config_with_levels, 
 
 
 @pytest.mark.asyncio
+async def test_threshold_restore_recalculates_level_and_updates_level_sensors(
+    hass, config_with_levels, mock_coordinator
+):
+    """Restored top_three must win over stale saved tariff states on startup."""
+    current_month = dt.as_local(dt.now()).month
+
+    threshold_sensor = GridCapWatcherCurrentEffectLevelThreshold(
+        hass, config_with_levels, mock_coordinator
+    )
+    threshold_sensor.schedule_update_ha_state = Mock()
+
+    level_name_sensor = GridCapacityWatcherCurrentLevelName(
+        hass, config_with_levels, mock_coordinator
+    )
+    level_name_sensor.schedule_update_ha_state = Mock()
+
+    level_price_sensor = GridCapacityWatcherCurrentLevelPrice(
+        hass, config_with_levels, mock_coordinator
+    )
+    level_price_sensor.schedule_update_ha_state = Mock()
+
+    threshold_last_state = Mock()
+    threshold_last_state.state = "5.0"
+    threshold_last_state.attributes = {
+        "top_three": [
+            {"month": current_month, "day": 11, "hour": 19, "energy": 5.559051977966121},
+            {"month": current_month, "day": 4, "hour": 0, "energy": 4.987013733227224},
+            {"month": current_month, "day": 3, "hour": 22, "energy": 7.174752356903896},
+        ]
+    }
+    threshold_sensor.async_get_last_state = AsyncMock(return_value=threshold_last_state)
+
+    name_last_state = Mock()
+    name_last_state.state = "Medium"
+    level_name_sensor.async_get_last_state = AsyncMock(return_value=name_last_state)
+
+    price_last_state = Mock()
+    price_last_state.state = "100"
+    level_price_sensor.async_get_last_state = AsyncMock(return_value=price_last_state)
+
+    await threshold_sensor.async_added_to_hass()
+    await level_name_sensor.async_added_to_hass()
+    await level_price_sensor.async_added_to_hass()
+
+    assert threshold_sensor._state == 8.0
+    assert level_name_sensor._state == "High"
+    assert float(level_price_sensor._state) == 200.0
+
+
+@pytest.mark.asyncio
 async def test_level_name_sensor_initialization(hass, config_with_levels, mock_coordinator):
     """Test GridCapacityWatcherCurrentLevelName initialization."""
     sensor = GridCapacityWatcherCurrentLevelName(
