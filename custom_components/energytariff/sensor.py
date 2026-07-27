@@ -73,7 +73,10 @@ LEVEL_SCHEMA = vol.Schema(
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_EFFECT_ENTITY): cv.string,
-        vol.Optional(TARGET_ENERGY): vol.Any(cv.positive_float, cv.template),
+        vol.Optional(TARGET_ENERGY): vol.Any(
+            vol.All(vol.Coerce(float), vol.Range(min=0)),
+            cv.template,
+        ),
         vol.Optional(MAX_EFFECT_ALLOWED): cv.positive_float,
         vol.Optional(ROUNDING_PRECISION): cv.positive_int,
         vol.Optional(GRID_LEVELS): vol.All(cv.ensure_list, [LEVEL_SCHEMA]),
