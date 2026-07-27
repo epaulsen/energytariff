@@ -52,13 +52,22 @@ sensor:
     target_energy: 10
 ```
 
+`target_energy` also accepts a Jinja2 template string:
+
+```yaml
+sensor:
+  - platform: energytariff
+    entity_id: "sensor.ams_power_sensor_watt"
+    target_energy: "{{ states('sensor.elvia_tariff_level') | float(10) }}"
+```
+
 ### Configuration schema
 
 | Name | Type | Default | Since | Description |
 |------|------|---------|-------|-------------|
 | entity_id | string | **required** | v0.0.1 | entity_id for your AMS meter sensor that provides current power usage.  This sensor is required, and value needs to be in either W or kW. |
 | precision | int | 2 | v0.0.1 | Number of decimals to use in rounding.  Defaults to 2, giving all sensors two decimals. |
-| target_energy | float | None | v0.0.1 | Target energy consumption in kWh.  See sensor "Available power this hour" for more detailed description. |
+| target_energy | float or template | None | v0.0.1 | Target energy threshold in kWh. Accepts a static number or a Jinja2 template string that resolves to a number. See sensor "Available power this hour" for more details. |
 | max_power | float | None | v0.0.1 | Max energy(in kWh) reported by "Available power this hour" sensor.See sensor "Available power this hour" for more detailed description. |
 | levels | list | None | v0.0.1 | Grid energy levels(primarily for norwegian HA users).  If your energy provider has tariffs based on energy consumption per hour, this list of levels can be utilized.
 
@@ -182,7 +191,7 @@ When sensor value is positive, power usage can be increased by sensor value with
 As an example, if value is 1000W, power usage can be increased by 1000W and you will still remain within current grid threshold value.
 If sensor value is negative, power usage much be reduced by that amount to remain within threshold value.  So if sensor value is -1500W, you need to reduce power consumption by 1500W to remain withing threshold level.
 
-If `target_energy` setting is configured, this value is used as a threshold.  Otherwise, if `level` setting is configured, the current energy level threshold value is used.  If neither are configured, this sensor is unavailable.
+If `target_energy` setting is configured, this value is used as a threshold. `target_energy` can be either a static number or a Jinja2 template that resolves to a number. Otherwise, if `level` setting is configured, the current energy level threshold value is used. If neither are configured, this sensor is unavailable.
 
 Given that `EC` is energy consumed, `EF` is current power, `TT` is threshold and `TD` is remaining seconds of hour, calculation is done using this formula:
 
@@ -201,8 +210,20 @@ resulting in available power to grow expontentially, and possibly exceeding the 
 
 **target_energy parameter**
 
-Sets the threshold energy value for this sensor to a fixed value.  If not set, threshold value from current grid energy level is used.
-As sensor data from three different days are needed in order to calculate grid level properly, it can be useful to set this to a pre-determined level that you do not want to exceed.
+Sets threshold energy value for this sensor. It accepts:
+
+- a static number (kWh), or
+- a Jinja2 template string that resolves to a numeric kWh value.
+
+If not set, threshold value from current grid energy level is used. As sensor data from three different days are needed in order to calculate grid level properly, it can be useful to set this to a pre-determined level that you do not want to exceed.
+
+Template example:
+
+```yaml
+target_energy: "{{ states('sensor.elvia_tariff_level') | float(10) }}"
+```
+
+If template render fails or produces non-numeric value, integration logs warning and keeps previous valid target value until next update.
 
 ## Average peak hour energy
 This sensor displays the average of the three hours with highest energy usage, from three different days.
