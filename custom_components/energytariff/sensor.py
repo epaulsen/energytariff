@@ -25,8 +25,12 @@ from homeassistant.exceptions import TemplateError
 from homeassistant.helpers import template as template_helper
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.event import (
+    TrackTemplate,
+    TrackTemplateResult,
+    TrackTemplateResultInfo,
     async_track_point_in_time,
     async_track_state_change_event,
+    async_track_template_result,
 )
 from homeassistant.util import dt
 
@@ -69,7 +73,10 @@ LEVEL_SCHEMA = vol.Schema(
 PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
     {
         vol.Required(CONF_EFFECT_ENTITY): cv.string,
-        vol.Optional(TARGET_ENERGY): cv.positive_float,
+        vol.Optional(TARGET_ENERGY): vol.Any(
+            vol.All(vol.Coerce(float), vol.Range(min=0)),
+            cv.template,
+        ),
         vol.Optional(MAX_EFFECT_ALLOWED): cv.positive_float,
         vol.Optional(ROUNDING_PRECISION): cv.positive_int,
         vol.Optional(GRID_LEVELS): vol.All(cv.ensure_list, [LEVEL_SCHEMA]),
@@ -644,7 +651,18 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor):
         self._coordinator = rx_coord
         self._precision = get_rounding_precision(config)
         self._max_effect = config.get(MAX_EFFECT_ALLOWED)
-        self._target_energy = config.get(TARGET_ENERGY)
+
+        target_energy_config = config.get(TARGET_ENERGY)
+        if isinstance(target_energy_config, template_helper.Template):
+            # A Jinja2 template was provided; resolve the value dynamically.
+            self._target_energy_template: template_helper.Template | None = target_energy_config
+            self._target_energy: float | None = None
+            self._unsub_target_template: TrackTemplateResultInfo | None = None
+        else:
+            self._target_energy_template = None
+            self._target_energy = target_energy_config
+            self._unsub_target_template = None
+
         self._state = None
         self.attr = {"grid_threshold_level": self._target_energy}
 
@@ -662,6 +680,7 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor):
     async def async_added_to_hass(self) -> None:
         """Call when entity about to be added to hass."""
         await super().async_added_to_hass()
+
         savedstate = await self.async_get_last_state()
         if savedstate:
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
@@ -670,11 +689,57 @@ class GridCapWatcherAvailableEffectRemainingHour(RestoreSensor):
                 self.attr["grid_threshold_level"] = savedstate.attributes[
                     "grid_threshold_level"
                 ]
+
+        # If target_energy is template-based, start tracking and refresh to get
+        # the initial rendered value. This runs after saved-state restoration so
+        # the live template result takes priority over any previously saved
+        # grid_threshold_level.
+        if self._target_energy_template is not None:
+            self._target_energy_template.hass = self._hass
+            self._unsub_target_template = async_track_template_result(
+                self._hass,
+                [TrackTemplate(self._target_energy_template, None)],
+                self._async_on_target_energy_template_result,
+            )
+            self._unsub_target_template.async_refresh()
+
+        if savedstate:
             self.__calculate()
 
     async def async_will_remove_from_hass(self) -> None:
         for d in self._disposables:
             d.dispose()
+        if self._unsub_target_template is not None:
+            self._unsub_target_template.async_remove()
+
+    @callback
+    def _async_on_target_energy_template_result(
+        self,
+        event: Event | None,
+        updates: list[TrackTemplateResult],
+    ) -> None:
+        """Handle template result changes for target_energy."""
+        updated = False
+        for update in updates:
+            if isinstance(update.result, TemplateError):
+                _LOGGER.warning(
+                    "Error rendering target_energy template: %s", update.result
+                )
+                continue
+            try:
+                value = float(update.result)
+            except (ValueError, TypeError):
+                _LOGGER.warning(
+                    "Could not parse target_energy template result '%s' as a number",
+                    update.result,
+                )
+                continue
+            self._target_energy = value
+            self.attr["grid_threshold_level"] = value
+            updated = True
+        if updated:
+            self.__calculate()
+            self.schedule_update_ha_state(True)
 
     def _threshold_state_change(self, state: GridThresholdData):
         if state is None:
