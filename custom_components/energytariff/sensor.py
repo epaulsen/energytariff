@@ -449,7 +449,7 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor):
             price_value = found_threshold["price"]
             if isinstance(price_value, template_helper.Template):
                 try:
-                    resolved_price = float(price_value.render(parse_result=True))
+                    resolved_price = float(price_value.async_render(parse_result=True))
                 except (TemplateError, ValueError) as err:
                     _LOGGER.error(
                         "Failed to resolve LEVEL_PRICE template for level '%s': %s",

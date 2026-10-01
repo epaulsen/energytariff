@@ -902,7 +902,7 @@ async def test_level_price_template_renders_correctly(hass, mock_coordinator):
 
     # Replace the numeric price with a mock Template object that renders to 175.0
     mock_template = Mock(spec=template_helper.Template)
-    mock_template.render.return_value = 175.0
+    mock_template.async_render.return_value = 175.0
     sensor._levels[0][LEVEL_PRICE] = mock_template  # "Low" level
 
     # Average of 1.0 kWh -> "Low" level (threshold 2.0, price now a template)
@@ -919,7 +919,7 @@ async def test_level_price_template_renders_correctly(hass, mock_coordinator):
     assert result is True
     assert len(received) == 1
     assert received[0].price == 175.0
-    mock_template.render.assert_called_once_with(parse_result=True)
+    mock_template.async_render.assert_called_once_with(parse_result=True)
 
 
 @pytest.mark.asyncio
@@ -944,7 +944,7 @@ async def test_level_price_template_entity_unavailable(hass, mock_coordinator):
 
     # Template that raises TemplateError — simulates a missing/unavailable entity
     mock_template = Mock(spec=template_helper.Template)
-    mock_template.render.side_effect = TemplateError(Exception("unavailable"))
+    mock_template.async_render.side_effect = TemplateError(Exception("unavailable"))
     sensor._levels[0][LEVEL_PRICE] = mock_template
 
     sensor.attr["top_three"] = [
@@ -959,6 +959,7 @@ async def test_level_price_template_entity_unavailable(hass, mock_coordinator):
 
     assert result is False
     assert len(received) == 0, "thresholddata.on_next() must NOT be called when template fails"
+    mock_template.async_render.assert_called_once_with(parse_result=True)
 
 
 @pytest.mark.asyncio
@@ -983,7 +984,7 @@ async def test_level_price_template_non_numeric_result(hass, mock_coordinator):
 
     # Template renders to a non-numeric string — float() will raise ValueError
     mock_template = Mock(spec=template_helper.Template)
-    mock_template.render.return_value = "not-a-number"
+    mock_template.async_render.return_value = "not-a-number"
     sensor._levels[0][LEVEL_PRICE] = mock_template
 
     sensor.attr["top_three"] = [
@@ -998,6 +999,7 @@ async def test_level_price_template_non_numeric_result(hass, mock_coordinator):
 
     assert result is False
     assert len(received) == 0, "thresholddata.on_next() must NOT be called when price is non-numeric"
+    mock_template.async_render.assert_called_once_with(parse_result=True)
 
 
 def test_schema_accepts_template_string():
