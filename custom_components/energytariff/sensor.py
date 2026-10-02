@@ -390,6 +390,7 @@ class GridCapWatcherCurrentEffectLevelThreshold(RestoreSensor):
             if savedstate.state not in (STATE_UNKNOWN, STATE_UNAVAILABLE):
                 self._state = float(savedstate.state)
             _restore_top_three(savedstate, self.attr)
+            self.calculate_level()
 
         # Subscribe only after restoration so the first callback processes
         # correct (restored) top_three data and does not emit stale thresholddata.
